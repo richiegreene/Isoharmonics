@@ -1,8 +1,11 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy
 from PyQt5.QtCore import Qt
+from PyQt5.QtGui import QFontDatabase, QFont
 from fractions import Fraction
 from gui.widgets.isohe_widget import IsoHEWidget
 from theory.triangle_generator import generate_triangle_image
+from theory.calculations import calculate_edo_step
+from theory.notation.engine import calculate_single_note
 
 class IsoHEWindow(QMainWindow):
     def __init__(self, main_app):
@@ -12,7 +15,18 @@ class IsoHEWindow(QMainWindow):
         self.setGeometry(150, 150, 600, 550)
         self.setStyleSheet("background-color: #23262F;")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
-        self.sidebar_width = 100
+        self.sidebar_width = 200
+
+        # Load custom font
+        font_id = QFontDatabase.addApplicationFont("utils/AdaptedArialNova.ttf")
+        if font_id < 0:
+            print("Font not loaded")
+        else:
+            font_families = QFontDatabase.applicationFontFamilies(font_id)
+            if font_families:
+                self.custom_font = QFont(font_families[0], 12)
+            else:
+                self.custom_font = QFont("Arial", 12)
 
         self.splitter = QSplitter()
         self.setCentralWidget(self.splitter)
@@ -76,28 +90,41 @@ class IsoHEWindow(QMainWindow):
         # Cent display and pivot buttons
         self.pivot_buttons = {}
         self.cent_labels = {}
+        self.note_labels = {}
         for pivot_name in ["3", "2", "1"]:
-            cent_display_layout = QHBoxLayout()
-            cent_display_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout = QHBoxLayout()
+            row_layout.setContentsMargins(0,0,0,0)
+            row_layout.setSpacing(0)
+
             button = QPushButton(pivot_name)
             button.setStyleSheet(self.pivot_button_style())
             button.setCheckable(True)
             button.setFixedSize(20, 20)
             button.clicked.connect(lambda checked, name=pivot_name: self.set_pivot(name))
             self.pivot_buttons[pivot_name] = button
-            cent_display_layout.addWidget(button)
+            row_layout.addWidget(button, 0, Qt.AlignLeft)
+
+            spacer1 = QSpacerItem(10, 20, QSizePolicy.Fixed, QSizePolicy.Minimum)
+            row_layout.addItem(spacer1)
 
             label = QLabel("0")
             label.setStyleSheet("color: white; font-size: 12pt;")
             self.cent_labels[pivot_name] = label
-            cent_display_layout.addWidget(label)
-            self.sidebar_layout.addLayout(cent_display_layout)
+            row_layout.addWidget(label, 0, Qt.AlignLeft)
+
+            spacer2 = QSpacerItem(10, 20, QSizePolicy.Fixed, QSizePolicy.Minimum)
+            row_layout.addItem(spacer2)
+
+            note_label = QLabel("C₄")
+            note_label.setFont(self.custom_font)
+            note_label.setStyleSheet("color: white;")
+            self.note_labels[pivot_name] = note_label
+            row_layout.addWidget(note_label, 1, Qt.AlignLeft)
+
+            self.sidebar_layout.addLayout(row_layout)
 
         self.isohe_widget.cents_label = self.cent_labels
-
-        # Set default pivot
-        self.pivot_buttons["1"].setChecked(True)
-        self.current_pivot = "1"
+        self.isohe_widget.note_labels = self.note_labels
         
         # Add ratios label below cents
         self.isohe_widget.ratios_label = QLabel()

@@ -7,13 +7,16 @@ from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QPainter, QPolygonF, QBrush, QColor, QPen, QFont, QPainterPath
 from fractions import Fraction
 from audio.generators import generate_combined_playback_buffer
-from theory.calculations import format_series_segment
+from theory.calculations import format_series_segment, calculate_edo_step
+from theory.notation.engine import calculate_single_note
+from utils.formatters import to_subscript
 
 class IsoHEWidget(QWidget):
     def __init__(self, main_app=None, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self.main_app = main_app
         self.cents_label = {}
+        self.note_labels = {}
         self.current_ratios = [1, 1, 1]
         self.buffer_duration = 0.75  # seconds (new default)
         self.fade_duration = 0.5    # seconds (new default)
@@ -227,6 +230,18 @@ class IsoHEWidget(QWidget):
         self.cents_label["3"].setText(f"{int(round(self.pitch3))}")
         self.cents_label["2"].setText(f"{int(round(self.pitch2))}")
         self.cents_label["1"].setText(f"{int(round(self.pitch1))}")
+
+        edo = int(self.main_app.edo_entry.text())
+        for i, pitch in enumerate([self.pitch1, self.pitch2, self.pitch3]):
+            step_str, error = calculate_edo_step(pitch, edo)
+            step = int(step_str.replace("-", "-"))
+            note_name = calculate_single_note(step, edo)
+            octave = 4 + (pitch // 1200)
+            note_name_with_octave = note_name + to_subscript(int(octave))
+            error_str = f"{round(-error):+}".replace("-", "-")
+            if error_str in ["+0", "-0"]:
+                error_str = ""
+            self.note_labels[str(i + 1)].setText(f"{note_name_with_octave} {error_str}")
 
         # 2. Ratio Display: Format the ratios based on their absolute values.
         self.current_ratios = new_ratios
