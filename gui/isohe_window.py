@@ -138,6 +138,9 @@ class IsoHEWindow(QMainWindow):
         self.splitter.addWidget(self.isohe_widget)
         self.splitter.setSizes([0, self.width()])
         
+        self.current_pivot = "1"  # Initialize default current_pivot
+        self.pivot_buttons[self.current_pivot].setChecked(True) # Set initial checked state
+
         self.update_equave()
         self.collapse_sidebar()
 
