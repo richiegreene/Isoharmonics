@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFont
+from PyQt5.QtGui import QFontDatabase, QFont
 from fractions import Fraction
 from gui.widgets.isohe_widget import IsoHEWidget
 from theory.triangle_generator import generate_triangle_image
@@ -16,6 +16,9 @@ class IsoHEWindow(QMainWindow):
         self.setStyleSheet("background-color: #23262F;")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
         self.sidebar_width = 200
+
+        # Load custom font
+        self.custom_font = QFont("Arial Nova", 12)
 
         self.splitter = QSplitter()
         self.setCentralWidget(self.splitter)
@@ -105,7 +108,7 @@ class IsoHEWindow(QMainWindow):
             row_layout.addItem(spacer2)
 
             note_label = QLabel("C₄")
-            note_label.setFont(QFont("Arial Nova", 12))
+            note_label.setFont(self.custom_font)
             note_label.setStyleSheet("color: white;")
             self.note_labels[pivot_name] = note_label
             row_layout.addWidget(note_label, 1, Qt.AlignLeft)
