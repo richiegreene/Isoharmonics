@@ -44,36 +44,34 @@ class IsoharmonicApp(QMainWindow):
         self.left_layout = QVBoxLayout()
         self.left_panel.setLayout(self.left_layout)
         self.layout.addWidget(self.left_panel, stretch=1)
-        custom_font = QFont("Arial Nova")
-        custom_font.setPointSize(14)
         
         self.fundamental_label = QLabel("Virtual Fundamental")
         self.fundamental_entry = DraggableFractionLineEdit("1/1")
-        self.fundamental_entry.setFont(custom_font)
+        self.fundamental_entry.setFont(QFont("Arial Nova", 14))
         self.fundamental_entry.textChanged.connect(self.update_fundamental_tuner_readout)
         self.fundamental_entry.focusIn.connect(self.safe_stop_sounds)
         self.fundamental_tuner_readout_label = QLineEdit("C₄")
         self.fundamental_tuner_readout_label.setReadOnly(True)
-        self.fundamental_tuner_readout_label.setFont(custom_font)
+        self.fundamental_tuner_readout_label.setFont(QFont("Arial Nova", 14))
         self.left_layout.addWidget(self.fundamental_label)
         self.left_layout.addWidget(self.fundamental_entry)
         self.left_layout.addWidget(self.fundamental_tuner_readout_label)
         
         self.isoharmonic_label = QLabel("Isoharmonic Partial")
         self.isoharmonic_entry = DraggableFractionLineEdit("1")
-        self.isoharmonic_entry.setFont(custom_font)
+        self.isoharmonic_entry.setFont(QFont("Arial Nova", 14))
         self.isoharmonic_entry.textChanged.connect(self.update_isoharmonic_tuner_readout)
         self.isoharmonic_entry.focusIn.connect(self.safe_stop_sounds)
         self.isoharmonic_tuner_readout_label = QLineEdit("C₄")
         self.isoharmonic_tuner_readout_label.setReadOnly(True)
-        self.isoharmonic_tuner_readout_label.setFont(custom_font)
+        self.isoharmonic_tuner_readout_label.setFont(QFont("Arial Nova", 14))
         self.left_layout.addWidget(self.isoharmonic_label)
         self.left_layout.addWidget(self.isoharmonic_entry)
         self.left_layout.addWidget(self.isoharmonic_tuner_readout_label)
         
         self.partials_above_label = QLabel("Above Partials Listed")
         self.partials_above_entry = DraggableIntegerLineEdit("7")
-        self.partials_above_entry.setFont(custom_font)
+        self.partials_above_entry.setFont(QFont("Arial Nova", 14))
         self.partials_above_entry.set_constraints(0, 128)
         self.partials_above_entry.textChanged.connect(self.update_results)
         self.partials_above_entry.focusIn.connect(self.safe_stop_sounds)
@@ -82,7 +80,7 @@ class IsoharmonicApp(QMainWindow):
         
         self.partials_below_label = QLabel("Below Partials Listed")
         self.partials_below_entry = ReversedDraggableIntegerLineEdit("0")
-        self.partials_below_entry.setFont(custom_font)
+        self.partials_below_entry.setFont(QFont("Arial Nova", 14))
         self.partials_below_entry.set_constraints(0, 100)
         self.partials_below_entry.textChanged.connect(self.update_results)
         self.partials_below_entry.focusIn.connect(self.safe_stop_sounds)
@@ -91,7 +89,7 @@ class IsoharmonicApp(QMainWindow):
         
         self.edo_label = QLabel("EDO Approximation")
         self.edo_entry = DraggableIntegerLineEdit("12")
-        self.edo_entry.setFont(custom_font)
+        self.edo_entry.setFont(QFont("Arial Nova", 14))
         self.edo_entry.set_constraints(1, 311)
         self.edo_entry.textChanged.connect(self.update_edo_approximation)
         self.edo_entry.focusIn.connect(self.safe_stop_sounds)
@@ -102,7 +100,7 @@ class IsoharmonicApp(QMainWindow):
         self.phase_entry = DraggableDecimalLineEdit("0")
         self.phase_entry.min_value = -5.0
         self.phase_entry.max_value = 5.0
-        self.phase_entry.setFont(custom_font)
+        self.phase_entry.setFont(QFont("Arial Nova", 14))
         self.phase_entry.textChanged.connect(self.update_phase_factor)
         self.phase_entry.focusIn.connect(self.safe_stop_sounds)
         self.left_layout.addWidget(self.phase_label)
@@ -112,7 +110,7 @@ class IsoharmonicApp(QMainWindow):
         self.roll_off_entry = DraggableDecimalLineEdit("1")
         self.roll_off_entry.min_value = -5.0
         self.roll_off_entry.max_value = 5.0
-        self.roll_off_entry.setFont(custom_font)
+        self.roll_off_entry.setFont(QFont("Arial Nova", 14))
         self.roll_off_entry.textChanged.connect(self.update_roll_off_rate)
         self.roll_off_entry.focusIn.connect(self.safe_stop_sounds)
         self.left_layout.addWidget(self.roll_off_label)
@@ -120,7 +118,7 @@ class IsoharmonicApp(QMainWindow):
 
         self.duration_label = QLabel("Playback Duration (s)")
         self.duration_entry = DraggableIntegerLineEdit("2")
-        self.duration_entry.setFont(custom_font)
+        self.duration_entry.setFont(QFont("Arial Nova", 14))
         self.duration_entry.set_constraints(1, 1000)
         self.duration_entry.textChanged.connect(self.update_duration)
         self.duration_entry.focusIn.connect(self.safe_stop_sounds)
@@ -201,7 +199,7 @@ class IsoharmonicApp(QMainWindow):
         self.table.setHorizontalHeaderLabels(["Play", "Harmonics", "Tuner Read-Out", "Play", "\\41", "Note Names and Error"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
-        self.table.setFont(custom_font)
+        self.table.setFont(QFont("Arial Nova", 14))
         self.table.setStyleSheet("""
             QHeaderView::section {
                 background-color: rgb(35, 38, 47);
