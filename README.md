@@ -1,6 +1,8 @@
 # Isoharmonics
 TODO: short description of the project.
 
+<img src="screenshot.png" alt="syntax" style="width:763px;"/>
+
 ## Installation
 
 To install, run:
@@ -8,7 +10,7 @@ To install, run:
 pip install requirements.txt
 ```
 
-To run the launch the main application, run:
+To launch the main application, run:
 ```bash
 python main.py
 ```
