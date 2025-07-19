@@ -34,132 +34,130 @@ class LatticeWidget(QWidget):
         self.current_sound = None
 
     def update_grid(self):
+        if self.main_app.lattice_window is None:
+            return
+
         self.nodes = []
         self.equave_steps.clear()
         self.c_steps.clear()
 
-        try:
-            if self.main_app.lattice_window.is_edo_mode:
-                steps = []
-                for row in range(self.main_app.table.rowCount()):
-                    item = self.main_app.table.item(row, 4)
-                    if item and item.text().strip():
+        if self.main_app.lattice_window.is_edo_mode:
+            steps = []
+            for row in range(self.main_app.table.rowCount()):
+                item = self.main_app.table.item(row, 4)
+                if item and item.text().strip():
+                    try:
+                        steps.append(int(item.text()))
+                    except ValueError:
+                        pass
+
+            if not steps:
+                return
+
+            e_start = int(self.main_app.lattice_window.equave_start.text() or "1")
+            e_end = int(self.main_app.lattice_window.equave_end.text() or "2")
+            h_start = int(self.main_app.lattice_window.h_start.text() or "2")
+            h_end = int(self.main_app.lattice_window.h_end.text() or "3")
+            d_start = int(self.main_app.lattice_window.d_start.text() or "4")
+            d_end = int(self.main_app.lattice_window.d_end.text() or "5")
+
+            if any(i < 0 or i >= len(steps) for i in [e_start, e_end, h_start, h_end, d_start, d_end]):
+                raise IndexError("Invalid partial index")
+
+            equave_interval = steps[e_end] - steps[e_start]
+            horizontal_interval = steps[h_end] - steps[h_start]
+            diagonal_interval = steps[d_end] - steps[d_start]
+
+            grid_radius = 12
+            center_step = 0
+            nodes = []
+            equave_steps = equave_interval if self.main_app.lattice_window.equave_toggle.isChecked() else 0
+
+            for q in range(-grid_radius, grid_radius + 1):
+                for r in range(-grid_radius, grid_radius + 1):
+                    s = -q - r
+                    if abs(s) > grid_radius:
+                        continue
+
+                    step = center_step + (q * horizontal_interval) + (r * diagonal_interval)
+
+                    if equave_steps > 0:
+                        step %= equave_steps
+                        if step < 0:
+                            step += equave_steps
+
+                    nodes.append((q, r, step))
+
+            self.nodes = nodes
+
+            edo = int(self.main_app.edo_entry.text())
+
+            if equave_interval > 0:
+                self.equave_steps = {i * equave_interval % equave_interval for i in range(edo // equave_interval + 1)}
+            self.c_steps = {i * edo for i in range(-grid_radius, grid_radius + 1)}
+
+        else:
+            fundamental = Fraction(self.main_app.fundamental_entry.text())
+            isoharmonic = Fraction(self.main_app.isoharmonic_entry.text())
+            partials_above = int(self.main_app.partials_above_entry.text())
+            partials_below = int(self.main_app.partials_below_entry.text())
+
+            series = generate_iso_series(fundamental, isoharmonic, partials_above, partials_below)
+
+            if len(series) < 5:
+                return
+
+            try:
+                h_start = int(self.main_app.lattice_window.h_start.text() or "2") - 1
+                h_end = int(self.main_app.lattice_window.h_end.text() or "3") - 1
+                d_start = int(self.main_app.lattice_window.d_start.text() or "4") - 1
+                d_end = int(self.main_app.lattice_window.d_end.text() or "5") - 1
+
+                if any(i < 0 or i >= len(series) for i in [h_start, h_end, d_start, d_end]):
+                    raise IndexError
+
+                horizontal_interval = series[h_end] / series[h_start]
+                diagonal_interval = series[d_start] / series[d_end]
+
+            except Exception as e:
+                print("Invalid custom lattice distance:", e)
+                self.nodes = []
+                self.update()
+                return
+
+            grid_radius = 12
+            center_ratio = Fraction(self.main_app.isoharmonic_entry.text())
+            nodes = []
+
+            for q in range(-grid_radius, grid_radius + 1):
+                for r in range(-grid_radius, grid_radius + 1):
+                    s = -q - r
+                    if abs(s) > grid_radius:
+                        continue
+                    ratio = center_ratio * (horizontal_interval ** q) * (diagonal_interval ** -r)
+                    if self.main_app.lattice_window.equave_toggle.isChecked():
                         try:
-                            steps.append(int(item.text()))
-                        except ValueError:
-                            pass
+                            e_start = int(self.main_app.lattice_window.equave_start.text()) - 1
+                            e_end = int(self.main_app.lattice_window.equave_end.text()) - 1
+                            series = generate_iso_series(fundamental, isoharmonic, partials_above, partials_below)
 
-                if not steps:
-                    return
+                            if any(i < 0 or i >= len(series) for i in [e_start, e_end]):
+                                raise IndexError
 
-                e_start = int(self.main_app.lattice_window.equave_start.text() or "1")
-                e_end = int(self.main_app.lattice_window.equave_end.text() or "2")
-                h_start = int(self.main_app.lattice_window.h_start.text() or "2")
-                h_end = int(self.main_app.lattice_window.h_end.text() or "3")
-                d_start = int(self.main_app.lattice_window.d_start.text() or "4")
-                d_end = int(self.main_app.lattice_window.d_end.text() or "5")
+                            equave = series[e_end] / series[e_start]
 
-                if any(i < 0 or i >= len(steps) for i in [e_start, e_end, h_start, h_end, d_start, d_end]):
-                    raise IndexError("Invalid partial index")
+                            while ratio >= equave:
+                                ratio /= equave
+                            while ratio < 1:
+                                ratio *= equave
 
-                equave_interval = steps[e_end] - steps[e_start]
-                horizontal_interval = steps[h_end] - steps[h_start]
-                diagonal_interval = steps[d_end] - steps[d_start]
+                        except Exception as e:
+                            print("Equave reduction error:", e)
+                    nodes.append((q, r, ratio))
+            self.nodes = nodes
 
-                grid_radius = 12
-                center_step = 0
-                nodes = []
-                equave_steps = equave_interval if self.main_app.lattice_window.equave_toggle.isChecked() else 0
 
-                for q in range(-grid_radius, grid_radius + 1):
-                    for r in range(-grid_radius, grid_radius + 1):
-                        s = -q - r
-                        if abs(s) > grid_radius:
-                            continue
-
-                        step = center_step + (q * horizontal_interval) + (r * diagonal_interval)
-
-                        if equave_steps > 0:
-                            step %= equave_steps
-                            if step < 0:
-                                step += equave_steps
-
-                        nodes.append((q, r, step))
-
-                self.nodes = nodes
-
-                edo = int(self.main_app.edo_entry.text())
-
-                if equave_interval > 0:
-                    self.equave_steps = {i * equave_interval % equave_interval for i in range(edo // equave_interval + 1)}
-                self.c_steps = {i * edo for i in range(-grid_radius, grid_radius + 1)}
-
-            else:
-                fundamental = Fraction(self.main_app.fundamental_entry.text())
-                isoharmonic = Fraction(self.main_app.isoharmonic_entry.text())
-                partials_above = int(self.main_app.partials_above_entry.text())
-                partials_below = int(self.main_app.partials_below_entry.text())
-
-                series = generate_iso_series(fundamental, isoharmonic, partials_above, partials_below)
-
-                if len(series) < 5:
-                    return
-
-                try:
-                    h_start = int(self.main_app.lattice_window.h_start.text() or "2") - 1
-                    h_end = int(self.main_app.lattice_window.h_end.text() or "3") - 1
-                    d_start = int(self.main_app.lattice_window.d_start.text() or "4") - 1
-                    d_end = int(self.main_app.lattice_window.d_end.text() or "5") - 1
-
-                    if any(i < 0 or i >= len(series) for i in [h_start, h_end, d_start, d_end]):
-                        raise IndexError
-
-                    horizontal_interval = series[h_end] / series[h_start]
-                    diagonal_interval = series[d_start] / series[d_end]
-
-                except Exception as e:
-                    print("Invalid custom lattice distance:", e)
-                    self.nodes = []
-                    self.update()
-                    return
-
-                grid_radius = 12
-                center_ratio = Fraction(self.main_app.isoharmonic_entry.text())
-                nodes = []
-
-                for q in range(-grid_radius, grid_radius + 1):
-                    for r in range(-grid_radius, grid_radius + 1):
-                        s = -q - r
-                        if abs(s) > grid_radius:
-                            continue
-                        ratio = center_ratio * (horizontal_interval ** q) * (diagonal_interval ** -r)
-                        if self.main_app.lattice_window.equave_toggle.isChecked():
-                            try:
-                                e_start = int(self.main_app.lattice_window.equave_start.text()) - 1
-                                e_end = int(self.main_app.lattice_window.equave_end.text()) - 1
-                                series = generate_iso_series(fundamental, isoharmonic, partials_above, partials_below)
-
-                                if any(i < 0 or i >= len(series) for i in [e_start, e_end]):
-                                    raise IndexError
-
-                                equave = series[e_end] / series[e_start]
-
-                                while ratio >= equave:
-                                    ratio /= equave
-                                while ratio < 1:
-                                    ratio *= equave
-
-                            except Exception as e:
-                                print("Equave reduction error:", e)
-                        nodes.append((q, r, ratio))
-                self.nodes = nodes
-
-        except Exception as e:
-            print(f"Grid update error: {e}")
-            self.nodes = []
-
-        finally:
-            self.update()
+        self.update()
 
     def calculate_layout(self):
         width = self.width()

@@ -1,6 +1,4 @@
 import numpy as np
-import pygame
-from fractions import Fraction
 
 bits = 16
 sample_rate = 44100

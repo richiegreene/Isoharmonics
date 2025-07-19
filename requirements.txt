@@ -1,0 +1,5 @@
+matplotlib==3.10.3
+numpy==1.26.4
+pygame==2.6.1
+PyQt5==5.15.11
+scipy==1.16.0

@@ -1,8 +1,7 @@
 import numpy as np
-from PyQt5.QtWidgets import QSlider, QLineEdit
 import pygame
-from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSpinBox
-from PyQt5.QtCore import pyqtSignal, QTimer
+from PyQt5.QtWidgets import QWidget
+from PyQt5.QtCore import QTimer
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QPainter, QPolygonF, QBrush, QColor, QPen, QFont, QPainterPath
 from fractions import Fraction
