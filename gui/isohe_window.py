@@ -1,11 +1,9 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy
 from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFontDatabase, QFont
+from PyQt5.QtGui import QFont
 from fractions import Fraction
 from gui.widgets.isohe_widget import IsoHEWidget
 from theory.triangle_generator import generate_triangle_image
-from theory.calculations import calculate_edo_step
-from theory.notation.engine import calculate_single_note
 
 class IsoHEWindow(QMainWindow):
     def __init__(self, main_app):

@@ -20,7 +20,6 @@ from audio.generators import generate_combined_playback_buffer, normalization_fa
 from theory.calculations import ratio_to_cents, calculate_edo_step, generate_iso_series, format_series_segment, simplify_ratio
 from theory.edo import assign_12edo_notation
 from theory.notation.engine import calculate_single_note
-from utils.theme import is_dark_theme
 
 class IsoharmonicApp(QMainWindow):
     def __init__(self):
@@ -420,7 +419,7 @@ class IsoharmonicApp(QMainWindow):
                 self.error_label.setText("")
             else:
                 raise ValueError
-        except Exception as e:
+        except Exception:
             self.duration_entry.setText("")
             self.error_label.setText("1 - 1000s")
 

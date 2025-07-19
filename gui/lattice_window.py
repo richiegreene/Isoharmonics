@@ -1,6 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QToolButton, QPushButton, QLabel, QLineEdit, QHBoxLayout
 from PyQt5.QtCore import Qt, QTimer
-from PyQt5.QtGui import QFont
 from gui.widgets.lattice_widget import LatticeWidget
 
 class LatticeWindow(QMainWindow):

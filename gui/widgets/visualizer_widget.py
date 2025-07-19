@@ -1,15 +1,13 @@
-from PyQt5.QtWidgets import QWidget, QApplication
+from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QPen
-from PyQt5.QtCore import Qt, QPointF, QTimer
-import numpy as np
+from PyQt5.QtCore import Qt
 import math
 import pygame
 from audio.generators import generate_combined_playback_buffer
-from audio.playback import play_combined_sine_wave, stop_sound, stop_all_sounds
+from audio.playback import stop_sound
 from fractions import Fraction
 from theory.calculations import simplify_ratio
-from audio.playback import play_single_sine_wave, stop_sound
-from audio.generators import generate_combined_playback_buffer
+from audio.playback import play_single_sine_wave
 
 class VisualizerWidget(QWidget):
     def __init__(self, isoharmonic_entry, main_app, parent=None):

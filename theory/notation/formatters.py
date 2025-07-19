@@ -1,4 +1,3 @@
-from .note import Note
 from utils.constants import *
 
 def printnom(nom):
