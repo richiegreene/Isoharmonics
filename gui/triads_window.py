@@ -168,6 +168,12 @@ class TriadsWindow(QMainWindow):
         self.sidebar_layout.addWidget(self.isohe_widget.ratios_label)
         self.sidebar_layout.addStretch()
 
+        self.loading_label = QLabel()
+        self.loading_label.setStyleSheet("color: grey;")
+        self.loading_label.setAlignment(Qt.AlignCenter)
+        self.sidebar_layout.addWidget(self.loading_label)
+        self.loading_label.hide()
+
         self.expand_button = QToolButton(self)
         self.expand_button.setStyleSheet(self.button_style())
         self.expand_button.setArrowType(Qt.LeftArrow)
@@ -290,6 +296,8 @@ class TriadsWindow(QMainWindow):
 
     def generate_triangle_image(self):
         if hasattr(self.isohe_widget, 'equave'):
+            self.loading_label.setText("Loading...")
+            self.loading_label.show()
             image = generate_triangle_image(
                 self.isohe_widget.equave,
                 self.isohe_widget.width(),
@@ -297,9 +305,12 @@ class TriadsWindow(QMainWindow):
             )
             if image:
                 self.isohe_widget.set_triangle_image(image)
+            self.loading_label.hide()
 
     def generate_sethares_model(self):
         try:
+            self.loading_label.setText("Loading...")
+            self.loading_label.show()
             # Get parameters from the main app
             ref_freq = float(Fraction(self.main_app.isoharmonic_entry.text())) * 261.6256 # C4
             equave_ratio = self.isohe_widget.equave
@@ -348,6 +359,7 @@ class TriadsWindow(QMainWindow):
 
         except Exception as e:
             print(f"Error starting Sethares model generation: {e}")
+            self.loading_label.hide()
 
     def on_sethares_finished(self, result):
         try:
@@ -384,3 +396,5 @@ class TriadsWindow(QMainWindow):
 
         except Exception as e:
             print(f"Error displaying Sethares model: {e}")
+        finally:
+            self.loading_label.hide()
