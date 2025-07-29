@@ -14,7 +14,7 @@ from gui.widgets.draggable_integer_line_edit import DraggableIntegerLineEdit, Re
 from gui.widgets.copyable_label import CopyableLabel
 from gui.widgets.visualizer_widget import VisualizerWidget
 from gui.lattice_window import LatticeWindow
-from gui.isohe_window import IsoHEWindow
+from gui.triads_window import TriadsWindow
 from audio.playback import play_sine_wave, stop_all_sounds, stop_sound
 from audio.generators import generate_combined_playback_buffer, normalization_factor, max_amplitude, sample_rate, fade_duration
 from theory.calculations import ratio_to_cents, calculate_edo_step, generate_iso_series, format_series_segment, simplify_ratio
@@ -31,7 +31,7 @@ class IsoharmonicApp(QMainWindow):
         self.active_timers = {}
         self.current_channel = None
         self.current_edo_channel = None
-        self.setWindowTitle("Harmonics")
+        self.setWindowTitle("Isoharmonics")
         self.setGeometry(100, 100, 1250, 650)
         
         self.apply_dark_theme()
@@ -137,9 +137,9 @@ class IsoharmonicApp(QMainWindow):
         self.lattice_button.clicked.connect(self.show_lattice_window)
         self.left_layout.addWidget(self.lattice_button)
 
-        self.isohe_button = QPushButton("3HE")
-        self.isohe_button.clicked.connect(self.show_isohe_window)
-        self.left_layout.addWidget(self.isohe_button)
+        self.triads_button = QPushButton("Triads")
+        self.triads_button.clicked.connect(self.show_triads_window)
+        self.left_layout.addWidget(self.triads_button)
 
         self.reset_button = QPushButton("Reset Parameters")
         self.reset_button.clicked.connect(self.reset_parameters)
@@ -231,7 +231,7 @@ class IsoharmonicApp(QMainWindow):
         self.ji_timbre = None
         self.edo_timbre = None
         self.lattice_window = None
-        self.isohe_window = None
+        self.triads_window = None
         self.table.itemChanged.connect(self.trigger_lattice_update)
         
         self.update_results()
@@ -246,10 +246,10 @@ class IsoharmonicApp(QMainWindow):
             self.lattice_window = LatticeWindow(self)
         self.lattice_window.show()
 
-    def show_isohe_window(self):
-        if not self.isohe_window:
-            self.isohe_window = IsoHEWindow(self)
-        self.isohe_window.show()
+    def show_triads_window(self):
+        if not self.triads_window:
+            self.triads_window = TriadsWindow(self)
+        self.triads_window.show()
 
     def trigger_lattice_update(self):
         """Update lattice when parameters change"""
@@ -604,8 +604,8 @@ class IsoharmonicApp(QMainWindow):
             self.visualizer.update()
             self.update_waveforms(series, edo_steps, edo)
             self.trigger_lattice_update()
-            if self.isohe_window:
-                self.isohe_window.update_equave()
+            if self.triads_window:
+                self.triads_window.update_equave()
         except Exception as e:
             self.error_label.setText(str(e))
 

@@ -1,17 +1,44 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy
-from PyQt5.QtCore import Qt
-from PyQt5.QtGui import QFontDatabase, QFont
+from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtGui import QFontDatabase, QFont, QImage
 from fractions import Fraction
+import numpy as np
+import io
+import matplotlib.pyplot as plt
+from matplotlib.colors import LinearSegmentedColormap
 from gui.widgets.isohe_widget import IsoHEWidget
 from theory.triangle_generator import generate_triangle_image
 from theory.calculations import calculate_edo_step
 from theory.notation.engine import calculate_single_note
+from theory.sethares import get_dissonance_data_3d_raw, transform_and_interpolate_to_triangle
 
-class IsoHEWindow(QMainWindow):
+class SetharesWorker(QThread):
+    finished = pyqtSignal(object)
+
+    def __init__(self, spectrum_data, ref_freq, max_interval, step_size_3d, grid_resolution, z_axis_ramp, cents_spread):
+        super().__init__()
+        self.spectrum_data = spectrum_data
+        self.ref_freq = ref_freq
+        self.max_interval = max_interval
+        self.step_size_3d = step_size_3d
+        self.grid_resolution = grid_resolution
+        self.z_axis_ramp = z_axis_ramp
+        self.cents_spread = cents_spread
+
+    def run(self):
+        r_raw, s_raw, z_raw = get_dissonance_data_3d_raw(
+            self.spectrum_data, self.ref_freq, self.max_interval, self.step_size_3d
+        )
+        x_tri_grid, y_tri_grid, z_tri_interpolated = transform_and_interpolate_to_triangle(
+            r_raw, s_raw, z_raw, self.max_interval, self.grid_resolution, self.z_axis_ramp, self.cents_spread
+        )
+        self.finished.emit((x_tri_grid, y_tri_grid, z_tri_interpolated))
+
+class TriadsWindow(QMainWindow):
     def __init__(self, main_app):
         super().__init__()
         self.main_app = main_app
-        self.setWindowTitle("Triadic Harmonic Entropy")
+        self.setWindowTitle("Triadic Concordance")
         self.setGeometry(150, 150, 600, 550)
         self.setStyleSheet("background-color: #23262F;")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -36,9 +63,9 @@ class IsoHEWindow(QMainWindow):
         self.collapse_button.clicked.connect(self.toggle_sidebar)
         self.sidebar_layout.addWidget(self.collapse_button)
         
-        # Generate Triangle
-        self.generate_button = QPushButton("Generate Triangle")
-        self.generate_button.setStyleSheet("""
+        # Harmonic Entropy
+        self.harmonic_entropy_button = QPushButton("Harmonic Entropy")
+        self.harmonic_entropy_button.setStyleSheet("""
             QPushButton {
                 background-color: #2C2F3B;
                 color: white;
@@ -47,8 +74,22 @@ class IsoHEWindow(QMainWindow):
                 border-radius: 4px;
             }
         """)
-        self.generate_button.clicked.connect(self.generate_triangle_image)
-        self.sidebar_layout.addWidget(self.generate_button)
+        self.harmonic_entropy_button.clicked.connect(self.generate_triangle_image)
+        self.sidebar_layout.addWidget(self.harmonic_entropy_button)
+
+        # Sethares Model
+        self.sethares_model_button = QPushButton("Sethares Model")
+        self.sethares_model_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+        """)
+        self.sethares_model_button.clicked.connect(self.generate_sethares_model)
+        self.sidebar_layout.addWidget(self.sethares_model_button)
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -256,3 +297,90 @@ class IsoHEWindow(QMainWindow):
             )
             if image:
                 self.isohe_widget.set_triangle_image(image)
+
+    def generate_sethares_model(self):
+        try:
+            # Get parameters from the main app
+            ref_freq = float(Fraction(self.main_app.isoharmonic_entry.text())) * 261.6256 # C4
+            equave_ratio = self.isohe_widget.equave
+            max_interval = float(equave_ratio)
+            roll_off_rate = self.main_app.roll_off_rate
+
+            # Get partials from the current timbre
+            if self.main_app.visualizer.current_timbre == self.main_app.ji_timbre:
+                partials = self.main_app.ji_timbre['ratios']
+            elif self.main_app.visualizer.current_timbre == self.main_app.edo_timbre:
+                partials = self.main_app.edo_timbre['ratios']
+            else:
+                partials = [1.0]
+
+            # Calculate amplitudes
+            amplitudes = []
+            for freq_ratio in partials:
+                if freq_ratio == 0:
+                    amplitudes.append(0.0)
+                    continue
+                if roll_off_rate > 0:
+                    amplitude = 1.0 / (freq_ratio ** roll_off_rate)
+                elif roll_off_rate < 0:
+                    amplitude = freq_ratio ** abs(roll_off_rate)
+                else: # roll_off_rate == 0
+                    amplitude = 1.0
+                amplitudes.append(amplitude)
+
+            spectrum_data = {
+                'freq': partials,
+                'amp': amplitudes
+            }
+
+            # Hardcoded parameters for now
+            step_size_3d = 0.01
+            grid_resolution = 400
+            z_axis_ramp = 2.0
+            cents_spread = 0
+
+            # Create and start the worker thread
+            self.worker = SetharesWorker(
+                spectrum_data, ref_freq, max_interval, step_size_3d, grid_resolution, z_axis_ramp, cents_spread
+            )
+            self.worker.finished.connect(self.on_sethares_finished)
+            self.worker.start()
+
+        except Exception as e:
+            print(f"Error starting Sethares model generation: {e}")
+
+    def on_sethares_finished(self, result):
+        try:
+            x_tri_grid, y_tri_grid, z_tri_interpolated = result
+
+            # The data represents an equilateral triangle.
+            # The aspect ratio is sqrt(3)/2.
+            aspect_ratio = np.sqrt(3) / 2
+
+            # Create the plot with the correct aspect ratio
+            # The figsize height is derived from the width to match the data's aspect ratio.
+            fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=150) # Increased dpi for better quality
+            colors = ["#23262F", "#1E1861", "#1A0EBE", "#0437f2", "#7895fc", "#A7C6ED", "#D0E1F9", 
+                      "#F0F4FF", "#FFFFFF"]
+            custom_cm = LinearSegmentedColormap.from_list("color_gradient", colors)
+
+            ax.imshow(z_tri_interpolated, cmap=custom_cm, origin='lower',
+                           extent=[0, 1200, 0, 1200 * np.sqrt(3) / 2],
+                           aspect='equal')
+
+            ax.set_xlim(0, 1200)
+            ax.set_ylim(0, 1200 * np.sqrt(3) / 2)
+            ax.axis('off')
+            fig.tight_layout(pad=0)
+
+            # Render the figure to a buffer
+            buf = io.BytesIO()
+            fig.savefig(buf, format='png', transparent=True)
+            buf.seek(0)
+            q_image = QImage.fromData(buf.read())
+            plt.close(fig)
+
+            self.isohe_widget.set_triangle_image(q_image)
+
+        except Exception as e:
+            print(f"Error displaying Sethares model: {e}")
