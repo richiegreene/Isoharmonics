@@ -196,7 +196,7 @@ class IsoharmonicApp(QMainWindow):
         self.right_layout.addWidget(self.header_widget)
         self.table = QTableWidget()
         self.table.setColumnCount(6)
-        self.table.setHorizontalHeaderLabels(["Play", "Harmonics", "Tuner Read-Out", "Play", "\\41", "Note Names and Error"])
+        self.table.setHorizontalHeaderLabels(["Play", "Partials", "Tuner Read-Out", "Play", "\\41", "Note Names and Error"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.verticalHeader().setVisible(False)
         self.table.setFont(QFont("Arial Nova", 14))
