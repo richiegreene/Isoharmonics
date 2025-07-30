@@ -1,6 +1,6 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFontDatabase, QFont, QImage
+from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor
 from fractions import Fraction
 import numpy as np
 import io
@@ -38,7 +38,7 @@ class TriadsWindow(QMainWindow):
     def __init__(self, main_app):
         super().__init__()
         self.main_app = main_app
-        self.setWindowTitle("Triadic Concordance")
+        self.setWindowTitle("Triadic Models")
         self.setGeometry(150, 150, 600, 550)
         self.setStyleSheet("background-color: #23262F;")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
@@ -166,6 +166,20 @@ class TriadsWindow(QMainWindow):
         self.isohe_widget.ratios_label.setWordWrap(True)
         self.isohe_widget.ratios_label.setAlignment(Qt.AlignLeft)
         self.sidebar_layout.addWidget(self.isohe_widget.ratios_label)
+
+        self.save_button = QPushButton(".png")
+        self.save_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+        """)
+        self.save_button.clicked.connect(self.save_triangle_image)
+        self.sidebar_layout.addWidget(self.save_button, 0, Qt.AlignLeft)
+
         self.sidebar_layout.addStretch()
 
         self.loading_label = QLabel()
@@ -293,6 +307,39 @@ class TriadsWindow(QMainWindow):
     def closeEvent(self, event):
         self.isohe_widget.stop_sound()
         super().closeEvent(event)
+
+    def save_triangle_image(self):
+        if self.isohe_widget.triangle_image is None:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "", "PNG Files (*.png)")
+        if not file_path:
+            return
+
+        source_image = self.isohe_widget.triangle_image
+        width = source_image.width()
+        height = source_image.height()
+
+        # Create a new image with a transparent background
+        cropped_image = QImage(width, height, QImage.Format_ARGB32)
+        cropped_image.fill(Qt.transparent)
+
+        # Define the triangular path for clipping
+        path = QPainterPath()
+        # The triangle points are defined for an image with its origin at the top-left
+        # The base of the triangle is at the bottom of the image
+        path.moveTo(width / 2, 0)  # Top vertex
+        path.lineTo(0, height)  # Bottom-left vertex
+        path.lineTo(width, height)  # Bottom-right vertex
+        path.closeSubpath()
+
+        # Use QPainter to draw the source image onto the new image, clipped by the path
+        painter = QPainter(cropped_image)
+        painter.setClipPath(path)
+        painter.drawImage(0, 0, source_image)
+        painter.end()
+
+        cropped_image.save(file_path)
 
     def generate_triangle_image(self):
         if hasattr(self.isohe_widget, 'equave'):
