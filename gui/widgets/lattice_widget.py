@@ -243,21 +243,27 @@ class LatticeWidget(QWidget):
             painter.setBrush(color)
             painter.drawEllipse(int(x - size/2), int(y - size/2), size, size)
 
-        if self.hovered_node:
-            hx, hy, value = self.hovered_node
-            painter.setFont(self.label_font)
-            painter.setPen(Qt.white)
+        # Label drawing logic
+        nodes_to_label = []
+        if self.main_app.lattice_window.display_labels_button.isChecked():
+            nodes_to_label = visible_nodes
+        elif self.hovered_node:
+            nodes_to_label.append(self.hovered_node)
 
+        painter.setFont(self.label_font)
+        painter.setPen(Qt.white)
+
+        for x, y, value in nodes_to_label:
             if self.main_app.lattice_window.is_edo_mode:
                 edo = int(self.main_app.edo_entry.text())
                 step = value % edo
                 note_name = calculate_single_note(step, edo)
                 text_width = painter.fontMetrics().width(note_name)
-                painter.drawText(int(hx - text_width / 2), int(hy - 15), note_name)
+                painter.drawText(int(x - text_width / 2), int(y - 15), note_name)
             else:
                 ratio_str = f"{value.numerator}/{value.denominator}"
                 text_width = painter.fontMetrics().width(ratio_str)
-                painter.drawText(int(hx - text_width / 2), int(hy - 15), ratio_str)
+                painter.drawText(int(x - text_width / 2), int(y - 15), ratio_str)
 
     def mouseMoveEvent(self, event):
         pos = event.pos()

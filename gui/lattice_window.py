@@ -75,6 +75,28 @@ class LatticeWindow(QMainWindow):
         self.equave_toggle.toggled.connect(self.update_lattice)
         self.sidebar_layout.addWidget(self.equave_toggle)
 
+        # Display Labels Button
+        self.display_labels_button = QPushButton("Display Labels")
+        self.display_labels_button.setCheckable(True)
+        self.display_labels_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:checked {
+                background-color: #0437f2;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+        """)
+        self.display_labels_button.toggled.connect(self.update_lattice)
+        self.sidebar_layout.addWidget(self.display_labels_button)
+
         # Lattice Distance Inputs
         header_label = QLabel("Interval Between Partials", self)
         header_label.setStyleSheet("color: white;")

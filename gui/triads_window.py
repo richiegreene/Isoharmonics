@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor
 from fractions import Fraction
@@ -42,7 +42,17 @@ class TriadsWindow(QMainWindow):
         self.setGeometry(150, 150, 600, 550)
         self.setStyleSheet("background-color: #23262F;")
         self.setWindowFlags(self.windowFlags() | Qt.WindowStaysOnTopHint)
+        self.setFocusPolicy(Qt.StrongFocus)
         self.sidebar_width = 200
+
+        # Image cache
+        self.image_banks = {
+            'blank': None,
+            'harmonic_entropy': None,
+            'sethares': None
+        }
+        self.current_bank_index = 0
+        self.bank_order = ['blank', 'harmonic_entropy', 'sethares']
 
         # Load custom font
         self.custom_font = QFont("Arial Nova", 12)
@@ -166,6 +176,42 @@ class TriadsWindow(QMainWindow):
         self.isohe_widget.ratios_label.setWordWrap(True)
         self.isohe_widget.ratios_label.setAlignment(Qt.AlignLeft)
         self.sidebar_layout.addWidget(self.isohe_widget.ratios_label)
+
+        # Last Generated
+        last_generated_layout = QVBoxLayout()
+        last_generated_label = QLabel("Last Generated")
+        last_generated_label.setStyleSheet("color: white;")
+        last_generated_layout.addWidget(last_generated_label)
+
+        button_layout = QHBoxLayout()
+        self.he_button = QPushButton("HE")
+        self.sm_button = QPushButton("SM")
+        self.blank_button = QPushButton("Blank")
+
+        for button in [self.he_button, self.sm_button, self.blank_button]:
+            button.setStyleSheet("""
+                QPushButton {
+                    background-color: #2C2F3B;
+                    color: white;
+                    border: 1px solid #555;
+                    padding: 4px;
+                    border-radius: 4px;
+                }
+            """)
+            button_layout.addWidget(button)
+
+        self.he_button.clicked.connect(lambda: self.display_image('harmonic_entropy'))
+        self.sm_button.clicked.connect(lambda: self.display_image('sethares'))
+        self.blank_button.clicked.connect(lambda: self.display_image('blank'))
+
+        self.model_button_group = QButtonGroup()
+        self.model_button_group.setExclusive(True)
+        self.model_button_group.addButton(self.he_button)
+        self.model_button_group.addButton(self.sm_button)
+        self.model_button_group.addButton(self.blank_button)
+
+        last_generated_layout.addLayout(button_layout)
+        self.sidebar_layout.addLayout(last_generated_layout)
 
         self.save_button = QPushButton(".png")
         self.save_button.setStyleSheet("""
@@ -304,9 +350,29 @@ class TriadsWindow(QMainWindow):
         except (ValueError, ZeroDivisionError):
             pass # Ignore invalid numbers for now
 
+    def cycle_image_bank(self, direction):
+        print(f"Cycling images. Direction: {direction}") # Temporary debug print
+        self.current_bank_index = (self.current_bank_index + direction) % len(self.bank_order)
+        bank_name = self.bank_order[self.current_bank_index]
+        image = self.image_banks.get(bank_name)
+        print(f"Displaying image from bank: {bank_name}") # Temporary debug print
+        self.isohe_widget.set_triangle_image(image)
+
     def closeEvent(self, event):
         self.isohe_widget.stop_sound()
         super().closeEvent(event)
+
+    def on_model_button_clicked(self, index):
+        bank_name = self.bank_order[index]
+        self.display_image(bank_name)
+
+    def display_image(self, bank_name):
+        self.current_bank_index = self.bank_order.index(bank_name)
+        button = self.model_button_group.button(self.current_bank_index)
+        if button:
+            button.setChecked(True)
+        image = self.image_banks.get(bank_name)
+        self.isohe_widget.set_triangle_image(image)
 
     def save_triangle_image(self):
         if self.isohe_widget.triangle_image is None:
@@ -343,7 +409,7 @@ class TriadsWindow(QMainWindow):
 
     def generate_triangle_image(self):
         if hasattr(self.isohe_widget, 'equave'):
-            self.loading_label.setText("Loading...")
+            self.loading_label.setText("Loading Harmonic Entropy...")
             self.loading_label.show()
             image = generate_triangle_image(
                 self.isohe_widget.equave,
@@ -351,6 +417,8 @@ class TriadsWindow(QMainWindow):
                 self.isohe_widget.height()
             )
             if image:
+                self.image_banks['harmonic_entropy'] = image
+                self.current_bank_index = self.bank_order.index('harmonic_entropy')
                 self.isohe_widget.set_triangle_image(image)
             self.loading_label.hide()
 
@@ -439,6 +507,8 @@ class TriadsWindow(QMainWindow):
             q_image = QImage.fromData(buf.read())
             plt.close(fig)
 
+            self.image_banks['sethares'] = q_image
+            self.current_bank_index = self.bank_order.index('sethares')
             self.isohe_widget.set_triangle_image(q_image)
 
         except Exception as e:
