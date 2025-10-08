@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QToolButton, QPushButton, QLabel, QLineEdit, QHBoxLayout
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QToolButton, QPushButton, QLabel, QLineEdit, QHBoxLayout, QFileDialog
 from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QFont
 from gui.widgets.lattice_widget import LatticeWidget
@@ -189,6 +189,22 @@ class LatticeWindow(QMainWindow):
 
         self.sidebar_layout.addStretch()
 
+        self.save_svg_button = QPushButton(".svg")
+        self.save_svg_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #404552;
+            }
+        """)
+        self.save_svg_button.clicked.connect(self.save_svg)
+        self.sidebar_layout.addWidget(self.save_svg_button)
+
         # Expand button (floating)
         self.expand_button = QToolButton(self)
         self.expand_button.setStyleSheet(self.button_style())
@@ -214,6 +230,11 @@ class LatticeWindow(QMainWindow):
         self.main_app.partials_below_entry.textChanged.connect(self.lattice_widget.update_grid)
         
         QTimer.singleShot(0, self.update_lattice)
+
+    def save_svg(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
+        if file_path:
+            self.lattice_widget.save_svg(file_path)
 
     def toggle_ji_edo(self, checked):
         self.is_edo_mode = checked

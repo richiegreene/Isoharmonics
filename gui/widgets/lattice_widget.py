@@ -1,6 +1,7 @@
 from PyQt5.QtWidgets import QWidget
 from PyQt5.QtGui import QPainter, QColor, QPen, QFont
-from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtCore import Qt, QTimer, QSize
+from PyQt5.QtSvg import QSvgGenerator
 import math
 from fractions import Fraction
 import pygame
@@ -188,6 +189,9 @@ class LatticeWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        self.paint_lattice(painter)
+
+    def paint_lattice(self, painter):
         painter.setRenderHint(QPainter.Antialiasing)
 
         if not self.nodes:
@@ -264,6 +268,22 @@ class LatticeWidget(QWidget):
                 ratio_str = f"{value.numerator}/{value.denominator}"
                 text_width = painter.fontMetrics().width(ratio_str)
                 painter.drawText(int(x - text_width / 2), int(y - 15), ratio_str)
+
+    def save_svg(self, file_path):
+        if not file_path:
+            return
+
+        svg_generator = QSvgGenerator()
+        svg_generator.setFileName(file_path)
+        svg_generator.setSize(self.size())
+        svg_generator.setViewBox(self.rect())
+        svg_generator.setTitle("Isoharmonic Lattice")
+        svg_generator.setDescription("An SVG depiction of the isoharmonic lattice.")
+
+        painter = QPainter()
+        painter.begin(svg_generator)
+        self.paint_lattice(painter)
+        painter.end()
 
     def mouseMoveEvent(self, event):
         pos = event.pos()
