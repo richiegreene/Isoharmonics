@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup, QInputDialog
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor
 from fractions import Fraction
@@ -45,16 +45,15 @@ class TriadsWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.sidebar_width = 200
 
-        # Image cache
-        self.image_banks = {
-            'blank': None,
-            'harmonic_entropy': None,
-            'sethares': None
-        }
-        self.data_banks = {
-            'harmonic_entropy': None,
-            'sethares': None
-        }
+        # Colormaps
+        self.colors = ["#23262F", "#1E1861", "#1A0EBE", "#0437f2", "#7895fc", "#A7C6ED", "#D0E1F9", "#F0F4FF", "#FFFFFF"]
+        self.custom_cm = LinearSegmentedColormap.from_list("color_gradient", self.colors)
+
+        # Caches
+        self.image_banks = {'blank': None, 'harmonic_entropy': None, 'sethares': None}
+        self.topo_image_banks = {'harmonic_entropy': None, 'sethares': None}
+        self.data_banks = {'harmonic_entropy': None, 'sethares': None}
+        
         self.current_bank_index = 0
         self.bank_order = ['blank', 'harmonic_entropy', 'sethares']
 
@@ -71,85 +70,66 @@ class TriadsWindow(QMainWindow):
         self.sidebar_layout.setContentsMargins(9, 9, 9, 9)
         self.sidebar_layout.setSpacing(4)
 
+        # Styles
+        self.tool_button_style = """
+            QToolButton { background: #343744; border: none; padding: 5px; }
+            QToolButton:hover { background: #404552; }
+        """
+        self.checkable_button_style = """
+            QPushButton {
+                background-color: #2C2F3B; color: white;
+                border: 1px solid #555; padding: 4px; border-radius: 4px;
+            }
+            QPushButton:checked {
+                background-color: #0437f2; color: white;
+            }
+            QPushButton:disabled {
+                background-color: #2C2F3B; color: #555; border: 1px solid #444;
+            }
+        """
+        self.non_checkable_button_style = """
+            QPushButton {
+                background-color: #2C2F3B; color: white;
+                border: 1px solid #555; padding: 4px; border-radius: 4px;
+            }
+            QPushButton:hover { background-color: #404552; }
+        """
+
         self.collapse_button = QToolButton()
-        self.collapse_button.setStyleSheet(self.button_style())
+        self.collapse_button.setStyleSheet(self.tool_button_style)
         self.collapse_button.setArrowType(Qt.RightArrow)
         self.collapse_button.clicked.connect(self.toggle_sidebar)
         self.sidebar_layout.addWidget(self.collapse_button)
         
         # Harmonic Entropy
         self.harmonic_entropy_button = QPushButton("Harmonic Entropy")
-        self.harmonic_entropy_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """)
+        self.harmonic_entropy_button.setStyleSheet(self.non_checkable_button_style)
         self.harmonic_entropy_button.clicked.connect(self.generate_triangle_image)
         self.sidebar_layout.addWidget(self.harmonic_entropy_button)
 
         # Sethares Model
         self.sethares_model_button = QPushButton("Sethares Model")
-        self.sethares_model_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """)
+        self.sethares_model_button.setStyleSheet(self.non_checkable_button_style)
         self.sethares_model_button.clicked.connect(self.generate_sethares_model)
         self.sidebar_layout.addWidget(self.sethares_model_button)
 
+        # Topographic Lines Button
+        self.topo_button = QPushButton("Topographic Lines")
+        self.topo_button.setStyleSheet(self.checkable_button_style)
+        self.topo_button.setCheckable(True)
+        self.topo_button.toggled.connect(self.display_current_image)
+        self.sidebar_layout.addWidget(self.topo_button)
+
         # EDO Button
         self.edo_button = QPushButton("EDO")
-        self.edo_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:checked {
-                background-color: #0437f2; 
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """)
+        self.edo_button.setStyleSheet(self.checkable_button_style)
         self.edo_button.setCheckable(True)
         self.edo_button.toggled.connect(self.toggle_edo_dots)
         self.sidebar_layout.addWidget(self.edo_button)
 
         # Labels Button
         self.labels_button = QPushButton("Labels")
-        self.labels_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:checked {
-                background-color: #0437f2; 
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:disabled {
-                background-color: #2C2F3B;
-                color: #555;
-                border: 1px solid #444;
-            }
-        """)
+        self.labels_button.setStyleSheet(self.checkable_button_style)
         self.labels_button.setCheckable(True)
         self.labels_button.toggled.connect(self.toggle_edo_labels)
         self.labels_button.setEnabled(False)
@@ -194,7 +174,7 @@ class TriadsWindow(QMainWindow):
             row_layout.setSpacing(0)
 
             button = QPushButton(pivot_name)
-            button.setStyleSheet(self.pivot_button_style())
+            button.setStyleSheet(self.checkable_button_style)
             button.setCheckable(True)
             button.setFixedSize(20, 20)
             button.clicked.connect(lambda checked, name=pivot_name: self.set_pivot(name))
@@ -243,20 +223,12 @@ class TriadsWindow(QMainWindow):
         self.blank_button = QPushButton("Blank")
 
         for button in [self.he_button, self.sm_button, self.blank_button]:
-            button.setStyleSheet("""
-                QPushButton {
-                    background-color: #2C2F3B;
-                    color: white;
-                    border: 1px solid #555;
-                    padding: 4px;
-                    border-radius: 4px;
-                }
-            """)
+            button.setStyleSheet(self.non_checkable_button_style)
             button_layout.addWidget(button)
 
-        self.he_button.clicked.connect(lambda: self.display_image('harmonic_entropy'))
-        self.sm_button.clicked.connect(lambda: self.display_image('sethares'))
-        self.blank_button.clicked.connect(lambda: self.display_image('blank'))
+        self.he_button.clicked.connect(lambda: self.set_current_model('harmonic_entropy'))
+        self.sm_button.clicked.connect(lambda: self.set_current_model('sethares'))
+        self.blank_button.clicked.connect(lambda: self.set_current_model('blank'))
 
         self.model_button_group = QButtonGroup()
         self.model_button_group.setExclusive(True)
@@ -272,50 +244,17 @@ class TriadsWindow(QMainWindow):
         # Save buttons
         save_button_layout = QHBoxLayout()
         self.save_png_button = QPushButton(".png")
-        self.save_png_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #404552;
-            }
-        """)
+        self.save_png_button.setStyleSheet(self.non_checkable_button_style)
         self.save_png_button.clicked.connect(self.save_triangle_image)
         save_button_layout.addWidget(self.save_png_button)
 
         self.save_svg_button = QPushButton(".svg")
-        self.save_svg_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #404552;
-            }
-        """)
+        self.save_svg_button.setStyleSheet(self.non_checkable_button_style)
         self.save_svg_button.clicked.connect(self.save_svg)
         save_button_layout.addWidget(self.save_svg_button)
 
         self.save_obj_button = QPushButton(".obj")
-        self.save_obj_button.setStyleSheet("""
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:hover {
-                background-color: #404552;
-            }
-        """)
+        self.save_obj_button.setStyleSheet(self.non_checkable_button_style)
         self.save_obj_button.clicked.connect(self.save_obj)
         save_button_layout.addWidget(self.save_obj_button)
         self.sidebar_layout.addLayout(save_button_layout)
@@ -327,7 +266,7 @@ class TriadsWindow(QMainWindow):
         self.loading_label.hide()
 
         self.expand_button = QToolButton(self)
-        self.expand_button.setStyleSheet(self.button_style())
+        self.expand_button.setStyleSheet(self.tool_button_style)
         self.expand_button.setArrowType(Qt.LeftArrow)
         self.expand_button.setFixedSize(30, 30)
         self.expand_button.clicked.connect(self.toggle_sidebar)
@@ -337,8 +276,8 @@ class TriadsWindow(QMainWindow):
         self.splitter.addWidget(self.isohe_widget)
         self.splitter.setSizes([0, self.width()])
         
-        self.current_pivot = "1"  # Initialize default current_pivot
-        self.pivot_buttons[self.current_pivot].setChecked(True) # Set initial checked state
+        self.current_pivot = "1"
+        self.pivot_buttons[self.current_pivot].setChecked(True)
 
         self.update_equave()
         self.collapse_sidebar()
@@ -347,6 +286,37 @@ class TriadsWindow(QMainWindow):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
         if file_path:
             self.isohe_widget.save_svg(file_path)
+
+    def generate_topographic_image(self, model_name):
+        if model_name not in self.data_banks or self.data_banks[model_name] is None:
+            return None
+
+        X, Y, Z = self.data_banks[model_name]
+        
+        aspect_ratio = np.sqrt(3) / 2
+        fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=150)
+        
+        levels = 15 
+        z_min, z_max = np.nanmin(Z), np.nanmax(Z)
+        
+        contour_levels = np.linspace(z_min, z_max, levels)
+
+        ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=0.7)
+
+        ax.set_aspect('equal')
+        ax.axis('off')
+        fig.tight_layout(pad=0)
+        
+        fig.patch.set_alpha(0.0)
+        ax.patch.set_alpha(0.0)
+
+        buf = io.BytesIO()
+        fig.savefig(buf, format='png', transparent=True)
+        buf.seek(0)
+        q_image = QImage.fromData(buf.read())
+        plt.close(fig)
+        
+        return q_image
 
     def save_obj(self):
         current_model_name = self.bank_order[self.current_bank_index]
@@ -359,19 +329,13 @@ class TriadsWindow(QMainWindow):
 
         X, Y, Z = self.data_banks[current_model_name]
         
-        # Normalize Z to be between 0 and 100 for height
         z_min, z_max = np.nanmin(Z), np.nanmax(Z)
-        if z_max - z_min > 0:
-            Z_normalized = 100 * (Z - z_min) / (z_max - z_min)
-        else:
-            Z_normalized = np.zeros_like(Z)
-
+        Z_normalized = 100 * (Z - z_min) / (z_max - z_min) if z_max - z_min > 0 else np.zeros_like(Z)
 
         rows, cols = X.shape
         vertices = []
         faces = []
         
-        # Create a map from (row, col) to vertex index
         vertex_map = {}
         vertex_idx = 1
 
@@ -384,19 +348,13 @@ class TriadsWindow(QMainWindow):
 
         for r in range(rows - 1):
             for c in range(cols - 1):
-                # Check if the four vertices of a quad are valid
-                v1_idx = vertex_map.get((r, c))
-                v2_idx = vertex_map.get((r + 1, c))
-                v3_idx = vertex_map.get((r + 1, c + 1))
-                v4_idx = vertex_map.get((r, c + 1))
-
-                if v1_idx and v2_idx and v3_idx and v4_idx:
+                v1_idx, v2_idx, v3_idx, v4_idx = (vertex_map.get(p) for p in [(r, c), (r + 1, c), (r + 1, c + 1), (r, c + 1)])
+                if all([v1_idx, v2_idx, v3_idx, v4_idx]):
                     faces.append(f"f {v1_idx} {v2_idx} {v3_idx} {v4_idx}\n")
-                elif v1_idx and v2_idx and v3_idx: # Triangle face
+                elif all([v1_idx, v2_idx, v3_idx]):
                     faces.append(f"f {v1_idx} {v2_idx} {v3_idx}\n")
-                elif v1_idx and v3_idx and v4_idx: # Triangle face
+                elif all([v1_idx, v3_idx, v4_idx]):
                     faces.append(f"f {v1_idx} {v3_idx} {v4_idx}\n")
-
 
         with open(file_path, 'w') as f:
             f.writelines(vertices)
@@ -410,68 +368,28 @@ class TriadsWindow(QMainWindow):
 
     def keyPressEvent(self, event):
         key = event.key()
-        if key == Qt.Key_1:
-            self.set_pivot("1")
-        elif key == Qt.Key_2:
-            self.set_pivot("2")
-        elif key == Qt.Key_3:
-            self.set_pivot("3")
-        else:
-            super().keyPressEvent(event)
-
-    def button_style(self):
-        return """
-            QToolButton {
-                background: #343744;
-                border: none;
-                padding: 5px;
-            }
-            QToolButton:hover {
-                background: #404552;
-            }
-        """
-
-    def pivot_button_style(self):
-        return """
-            QPushButton {
-                background-color: #2C2F3B;
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-            QPushButton:checked {
-                background-color: #0437f2; 
-                color: white;
-                border: 1px solid #555;
-                padding: 4px;
-                border-radius: 4px;
-            }
-        """
+        if key == Qt.Key_1: self.set_pivot("1")
+        elif key == Qt.Key_2: self.set_pivot("2")
+        elif key == Qt.Key_3: self.set_pivot("3")
+        else: super().keyPressEvent(event)
 
     def set_pivot(self, pivot_name):
         if self.current_pivot != pivot_name:
             self.pivot_buttons[self.current_pivot].setChecked(False)
             self.current_pivot = pivot_name
             self.pivot_buttons[pivot_name].setChecked(True)
-            
-            pivot_map = {"3": "upper", "2": "middle", "1": "lower"}
-            self.isohe_widget.set_pivot_voice(pivot_map[pivot_name])
+            self.isohe_widget.set_pivot_voice({"3": "upper", "2": "middle", "1": "lower"}[pivot_name])
 
     def toggle_edo_dots(self, checked):
         self.isohe_widget.set_show_edo_dots(checked)
         self.labels_button.setEnabled(checked)
-        if not checked:
-            self.labels_button.setChecked(False)
+        if not checked: self.labels_button.setChecked(False)
 
     def toggle_edo_labels(self, checked):
         self.isohe_widget.set_show_edo_labels(checked)
 
     def toggle_sidebar(self):
-        if self.sidebar.width() == 0:
-            self.expand_sidebar()
-        else:
-            self.collapse_sidebar()
+        self.expand_sidebar() if self.sidebar.width() == 0 else self.collapse_sidebar()
 
     def expand_sidebar(self):
         self.splitter.setSizes([self.sidebar_width, self.width() - self.sidebar_width])
@@ -488,191 +406,120 @@ class TriadsWindow(QMainWindow):
 
     def update_equave(self):
         try:
-            row1_idx = int(self.equave_start.text())
-            row2_idx = int(self.equave_end.text())
-
+            row1_idx, row2_idx = int(self.equave_start.text()), int(self.equave_end.text())
             table = self.main_app.table
-            if not (0 <= row1_idx < table.rowCount() and 0 <= row2_idx < table.rowCount()):
-                return
-
-            item1 = table.item(row1_idx, 1)
-            item2 = table.item(row2_idx, 1)
-
+            if not (0 <= row1_idx < table.rowCount() and 0 <= row2_idx < table.rowCount()): return
+            item1, item2 = table.item(row1_idx, 1), table.item(row2_idx, 1)
             if item1 and item2:
-                ratio1 = Fraction(item1.text())
-                ratio2 = Fraction(item2.text())
-                
-                if ratio1 == 0: return
-                
-                equave_ratio = ratio2 / ratio1
-                self.isohe_widget.set_equave(equave_ratio)
-
-        except (ValueError, ZeroDivisionError):
-            pass # Ignore invalid numbers for now
-
-    def cycle_image_bank(self, direction):
-        print(f"Cycling images. Direction: {direction}") # Temporary debug print
-        self.current_bank_index = (self.current_bank_index + direction) % len(self.bank_order)
-        bank_name = self.bank_order[self.current_bank_index]
-        image = self.image_banks.get(bank_name)
-        print(f"Displaying image from bank: {bank_name}") # Temporary debug print
-        self.isohe_widget.set_triangle_image(image)
+                ratio1, ratio2 = Fraction(item1.text()), Fraction(item2.text())
+                if ratio1 != 0: self.isohe_widget.set_equave(ratio2 / ratio1)
+        except (ValueError, ZeroDivisionError): pass
 
     def closeEvent(self, event):
         self.isohe_widget.stop_sound()
         super().closeEvent(event)
 
-    def on_model_button_clicked(self, index):
-        bank_name = self.bank_order[index]
-        self.display_image(bank_name)
-
-    def display_image(self, bank_name):
+    def set_current_model(self, bank_name):
         self.current_bank_index = self.bank_order.index(bank_name)
         button = self.model_button_group.button(self.current_bank_index)
-        if button:
-            button.setChecked(True)
-        image = self.image_banks.get(bank_name)
+        if button: button.setChecked(True)
+        self.display_current_image()
+
+    def display_current_image(self):
+        bank_name = self.bank_order[self.current_bank_index]
+        
+        if self.topo_button.isChecked():
+            image = self.topo_image_banks.get(bank_name)
+        else:
+            image = self.image_banks.get(bank_name)
+            
         self.isohe_widget.set_triangle_image(image)
 
     def save_triangle_image(self):
-        if self.isohe_widget.triangle_image is None:
-            return
-
+        if self.isohe_widget.triangle_image is None: return
         file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "", "PNG Files (*.png)")
-        if not file_path:
-            return
+        if not file_path: return
 
         source_image = self.isohe_widget.triangle_image
-        width = source_image.width()
-        height = source_image.height()
-
-        # Create a new image with a transparent background
+        width, height = source_image.width(), source_image.height()
         cropped_image = QImage(width, height, QImage.Format_ARGB32)
         cropped_image.fill(Qt.transparent)
 
-        # Define the triangular path for clipping
         path = QPainterPath()
-        # The triangle points are defined for an image with its origin at the top-left
-        # The base of the triangle is at the bottom of the image
-        path.moveTo(width / 2, 0)  # Top vertex
-        path.lineTo(0, height)  # Bottom-left vertex
-        path.lineTo(width, height)  # Bottom-right vertex
+        path.moveTo(width / 2, 0)
+        path.lineTo(0, height)
+        path.lineTo(width, height)
         path.closeSubpath()
 
-        # Use QPainter to draw the source image onto the new image, clipped by the path
         painter = QPainter(cropped_image)
         painter.setClipPath(path)
         painter.drawImage(0, 0, source_image)
         painter.end()
-
         cropped_image.save(file_path)
 
     def generate_triangle_image(self):
         if hasattr(self.isohe_widget, 'equave'):
             self.loading_label.setText("Loading Harmonic Entropy...")
             self.loading_label.show()
-            image, x, y, z = generate_triangle_image(
-                self.isohe_widget.equave,
-                self.isohe_widget.width(),
-                self.isohe_widget.height()
-            )
-            if image:
-                self.image_banks['harmonic_entropy'] = image
-                self.data_banks['harmonic_entropy'] = (x, y, z)
-                self.current_bank_index = self.bank_order.index('harmonic_entropy')
-                self.isohe_widget.set_triangle_image(image)
+            image, x, y, z = generate_triangle_image(self.isohe_widget.equave, self.isohe_widget.width(), self.isohe_widget.height())
+            
+            model_name = 'harmonic_entropy'
+            self.image_banks[model_name] = image
+            self.data_banks[model_name] = (x, y, z)
+            self.topo_image_banks[model_name] = self.generate_topographic_image(model_name)
+            
+            self.set_current_model(model_name)
             self.loading_label.hide()
 
     def generate_sethares_model(self):
         try:
             self.loading_label.setText("Loading...")
             self.loading_label.show()
-            # Get parameters from the main app
-            ref_freq = float(Fraction(self.main_app.isoharmonic_entry.text())) * 261.6256 # C4
+            ref_freq = float(Fraction(self.main_app.isoharmonic_entry.text())) * 261.6256
             equave_ratio = self.isohe_widget.equave
             max_interval = float(equave_ratio)
             roll_off_rate = self.main_app.roll_off_rate
 
-            # Get partials from the current timbre
-            if self.main_app.visualizer.current_timbre == self.main_app.ji_timbre:
-                partials = self.main_app.ji_timbre['ratios']
-            elif self.main_app.visualizer.current_timbre == self.main_app.edo_timbre:
-                partials = self.main_app.edo_timbre['ratios']
+            current_timbre = self.main_app.visualizer.current_timbre
+            if current_timbre in [self.main_app.ji_timbre, self.main_app.edo_timbre]:
+                partials = current_timbre['ratios']
             else:
                 partials = [1.0]
 
-            # Calculate amplitudes
-            amplitudes = []
-            for freq_ratio in partials:
-                if freq_ratio == 0:
-                    amplitudes.append(0.0)
-                    continue
-                if roll_off_rate > 0:
-                    amplitude = 1.0 / (freq_ratio ** roll_off_rate)
-                elif roll_off_rate < 0:
-                    amplitude = freq_ratio ** abs(roll_off_rate)
-                else: # roll_off_rate == 0
-                    amplitude = 1.0
-                amplitudes.append(amplitude)
+            amplitudes = [(1.0 / (fr**roll_off_rate) if roll_off_rate > 0 else fr**abs(roll_off_rate)) if fr != 0 else 0.0 for fr in partials]
+            if roll_off_rate == 0: amplitudes = [1.0 for _ in partials]
 
-            spectrum_data = {
-                'freq': partials,
-                'amp': amplitudes
-            }
-
-            # Hardcoded parameters for now
-            step_size_3d = 0.01
-            grid_resolution = 400
-            z_axis_ramp = 2.0
-            cents_spread = 0
-
-            # Create and start the worker thread
-            self.worker = SetharesWorker(
-                spectrum_data, ref_freq, max_interval, step_size_3d, grid_resolution, z_axis_ramp, cents_spread
-            )
+            spectrum_data = {'freq': partials, 'amp': amplitudes}
+            
+            self.worker = SetharesWorker(spectrum_data, ref_freq, max_interval, 0.01, 400, 2.0, 0)
             self.worker.finished.connect(self.on_sethares_finished)
             self.worker.start()
-
         except Exception as e:
             print(f"Error starting Sethares model generation: {e}")
             self.loading_label.hide()
 
     def on_sethares_finished(self, result):
         try:
-            x_tri_grid, y_tri_grid, z_tri_interpolated = result
-            self.data_banks['sethares'] = result
+            x_grid, y_grid, z_interpolated = result
+            model_name = 'sethares'
+            self.data_banks[model_name] = result
 
-            # The data represents an equilateral triangle.
-            # The aspect ratio is sqrt(3)/2.
             aspect_ratio = np.sqrt(3) / 2
-
-            # Create the plot with the correct aspect ratio
-            # The figsize height is derived from the width to match the data's aspect ratio.
-            fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=150) # Increased dpi for better quality
-            colors = ["#23262F", "#1E1861", "#1A0EBE", "#0437f2", "#7895fc", "#A7C6ED", "#D0E1F9", 
-                      "#F0F4FF", "#FFFFFF"]
-            custom_cm = LinearSegmentedColormap.from_list("color_gradient", colors)
-
-            ax.imshow(z_tri_interpolated, cmap=custom_cm, origin='lower',
-                           extent=[0, 1200, 0, 1200 * np.sqrt(3) / 2],
-                           aspect='equal')
-
-            ax.set_xlim(0, 1200)
-            ax.set_ylim(0, 1200 * np.sqrt(3) / 2)
+            fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=150)
+            ax.imshow(z_interpolated, cmap=self.custom_cm, origin='lower', extent=[0, 1200, 0, 1200 * aspect_ratio], aspect='equal')
             ax.axis('off')
             fig.tight_layout(pad=0)
 
-            # Render the figure to a buffer
             buf = io.BytesIO()
             fig.savefig(buf, format='png', transparent=True)
             buf.seek(0)
             q_image = QImage.fromData(buf.read())
             plt.close(fig)
 
-            self.image_banks['sethares'] = q_image
-            self.current_bank_index = self.bank_order.index('sethares')
-            self.isohe_widget.set_triangle_image(q_image)
-
+            self.image_banks[model_name] = q_image
+            self.topo_image_banks[model_name] = self.generate_topographic_image(model_name)
+            
+            self.set_current_model(model_name)
         except Exception as e:
             print(f"Error displaying Sethares model: {e}")
         finally:
