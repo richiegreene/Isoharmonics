@@ -42,6 +42,11 @@ class IsoHEWidget(QWidget):
         self.last_drag_point = None
         self.sound = None
         self.triangle_image = None
+        self.show_edo_dots = False
+
+    def set_show_edo_dots(self, show):
+        self.show_edo_dots = show
+        self.update()
 
     def set_pivot_voice(self, voice):
         if self.pivot_voice != voice:
@@ -116,6 +121,9 @@ class IsoHEWidget(QWidget):
             painter.setBrush(QBrush(QColor(11, 6, 86)))
             painter.drawPolygon(self.triangle)
 
+        if self.show_edo_dots:
+            self.draw_edo_dots(painter)
+
         font = QFont("Arial Nova", 12)
         painter.setFont(font)
         painter.setPen(Qt.white)
@@ -129,6 +137,42 @@ class IsoHEWidget(QWidget):
         bottom_y = self.v2.y()  # Both corners share the same y
         painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
         painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
+
+    def draw_edo_dots(self, painter):
+        try:
+            edo = int(self.main_app.edo_entry.text())
+            if edo <= 0:
+                return
+        except (ValueError, AttributeError):
+            return
+
+        equave_cents = 1200 * np.log2(float(self.equave))
+        step_in_cents = 1200 / edo
+
+        painter.setBrush(QColor('#A0A0A0'))
+        painter.setPen(QPen(QColor('#0437f2'), 1))
+
+        num_steps = int(equave_cents / step_in_cents)
+
+        for i in range(num_steps + 1):
+            for j in range(num_steps + 1 - i):
+                cx = i * step_in_cents
+                cy = j * step_in_cents
+
+                if cx + cy > equave_cents:
+                    continue
+
+                w1 = cy / equave_cents
+                w3 = cx / equave_cents
+                w2 = 1.0 - w1 - w3
+
+                if not (0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1):
+                    continue
+
+                x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
+                y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
+
+                painter.drawEllipse(QPointF(x, y), 4, 4)
 
     def mousePressEvent(self, event):
         if self.triangle.containsPoint(event.pos(), Qt.OddEvenFill):

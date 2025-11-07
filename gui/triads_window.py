@@ -100,6 +100,28 @@ class TriadsWindow(QMainWindow):
         """)
         self.sethares_model_button.clicked.connect(self.generate_sethares_model)
         self.sidebar_layout.addWidget(self.sethares_model_button)
+
+        # EDO Button
+        self.edo_button = QPushButton("EDO")
+        self.edo_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:checked {
+                background-color: #0437f2; 
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+        """)
+        self.edo_button.setCheckable(True)
+        self.edo_button.toggled.connect(self.toggle_edo_dots)
+        self.sidebar_layout.addWidget(self.edo_button)
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -306,6 +328,9 @@ class TriadsWindow(QMainWindow):
             
             pivot_map = {"3": "upper", "2": "middle", "1": "lower"}
             self.isohe_widget.set_pivot_voice(pivot_map[pivot_name])
+
+    def toggle_edo_dots(self, checked):
+        self.isohe_widget.set_show_edo_dots(checked)
 
     def toggle_sidebar(self):
         if self.sidebar.width() == 0:
