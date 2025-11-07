@@ -51,7 +51,6 @@ class TriadsWindow(QMainWindow):
 
         # Caches
         self.image_banks = {'blank': None, 'harmonic_entropy': None, 'sethares': None}
-        self.topo_image_banks = {'harmonic_entropy': None, 'sethares': None}
         self.data_banks = {'harmonic_entropy': None, 'sethares': None}
         
         self.current_bank_index = 0
@@ -114,7 +113,7 @@ class TriadsWindow(QMainWindow):
         self.sidebar_layout.addWidget(self.sethares_model_button)
 
         # Topographic Lines Button
-        self.topo_button = QPushButton("Topographic Lines")
+        self.topo_button = QPushButton("Lines")
         self.topo_button.setStyleSheet(self.checkable_button_style)
         self.topo_button.setCheckable(True)
         self.topo_button.toggled.connect(self.display_current_image)

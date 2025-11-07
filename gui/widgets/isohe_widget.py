@@ -134,8 +134,6 @@ class IsoHEWidget(QWidget):
         
         # Draw background or image
         if self.topo_data and self.topo_colormap and self.topo_model_name:
-            painter.setBrush(QBrush(QColor(11, 6, 86)))
-            painter.drawPolygon(self.triangle)
             self.paint_topo_contours(painter, self.topo_data, self.topo_colormap, self.topo_model_name)
         elif self.triangle_image:
             rect = self.triangle.boundingRect().toRect()
