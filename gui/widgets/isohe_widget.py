@@ -11,6 +11,8 @@ from audio.generators import generate_combined_playback_buffer
 from theory.calculations import format_series_segment, calculate_edo_step
 from theory.notation.engine import calculate_single_note
 from utils.formatters import to_subscript
+import matplotlib.pyplot as plt
+from matplotlib.path import Path as MplPath
 
 class IsoHEWidget(QWidget):
     def __init__(self, main_app=None, *args, **kwargs):
@@ -147,7 +149,7 @@ class IsoHEWidget(QWidget):
         painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
         painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
 
-    def save_svg(self, file_path):
+    def save_svg(self, file_path, topo_data=None, colormap=None, model_name=None):
         if not file_path:
             return
 
@@ -160,8 +162,80 @@ class IsoHEWidget(QWidget):
 
         painter = QPainter()
         painter.begin(svg_generator)
-        self.paint_widget(painter)
+        
+        if topo_data and colormap and model_name:
+            self.paint_topo_svg(painter, topo_data, colormap, model_name)
+        else:
+            self.paint_widget(painter)
+
         painter.end()
+
+    def paint_topo_svg(self, painter, topo_data, colormap, model_name):
+        X, Y, Z = topo_data
+        levels = 15
+        z_min, z_max = np.nanmin(Z), np.nanmax(Z)
+        if np.isnan(z_min) or np.isnan(z_max):
+            return
+        contour_levels = np.linspace(z_min, z_max, levels)
+
+        # Create a dummy figure to generate contour data
+        fig, ax = plt.subplots()
+        if model_name == 'harmonic_entropy':
+            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=0.7, origin='lower')
+        elif model_name == 'sethares':
+            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=0.7)
+        else:
+            plt.close(fig)
+            return
+        
+        # Get the bounding box of the triangle in the widget's coordinates
+        widget_triangle_rect = self.triangle.boundingRect()
+
+        # Get the bounding box of the data
+        x_min, x_max = np.nanmin(X), np.nanmax(X)
+        y_min, y_max = np.nanmin(Y), np.nanmax(Y)
+
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        # Clip to triangle
+        path = QPainterPath()
+        path.addPolygon(self.triangle)
+        painter.setClipPath(path)
+
+        for i, collection in enumerate(contours.collections):
+            color = collection.get_edgecolor()[0]
+            qt_color = QColor.fromRgbF(color[0], color[1], color[2], color[3])
+            pen = QPen(qt_color, 0.7)
+            painter.setPen(pen)
+
+            for path in collection.get_paths():
+                q_path = QPainterPath()
+                for j, (vertex, code) in enumerate(path.iter_segments()):
+                    # Transform vertex from data coordinates to widget coordinates
+                    x_norm = (vertex[0] - x_min) / (x_max - x_min)
+                    y_norm = (vertex[1] - y_min) / (y_max - y_min)
+                    
+                    # The y-axis for matplotlib is inverted compared to Qt
+                    y_norm = 1 - y_norm
+
+                    x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
+                    y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
+                    
+                    if code == MplPath.MOVETO:
+                        q_path.moveTo(x_widget, y_widget)
+                    elif code == MplPath.LINETO:
+                        q_path.lineTo(x_widget, y_widget)
+                    elif code == MplPath.CLOSEPOLY:
+                        q_path.closeSubpath()
+
+                painter.drawPath(q_path)
+        
+        painter.setClipping(False)
+        plt.close(fig)
+        
+        # Draw the rest of the widget
+        self.paint_widget(painter)
+
 
     def draw_edo_dots(self, painter):
         try:

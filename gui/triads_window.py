@@ -285,7 +285,12 @@ class TriadsWindow(QMainWindow):
     def save_svg(self):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
         if file_path:
-            self.isohe_widget.save_svg(file_path)
+            topo_data = None
+            model_name = self.bank_order[self.current_bank_index]
+            if self.topo_button.isChecked():
+                if model_name in self.data_banks:
+                    topo_data = self.data_banks[model_name]
+            self.isohe_widget.save_svg(file_path, topo_data, self.custom_cm, model_name)
 
     def generate_topographic_image(self, model_name):
         if model_name not in self.data_banks or self.data_banks[model_name] is None:
