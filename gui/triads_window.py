@@ -263,8 +263,12 @@ class TriadsWindow(QMainWindow):
         last_generated_layout.addLayout(button_layout)
         self.sidebar_layout.addLayout(last_generated_layout)
 
-        self.save_button = QPushButton(".png")
-        self.save_button.setStyleSheet("""
+        self.sidebar_layout.addStretch()
+
+        # Save buttons
+        save_button_layout = QHBoxLayout()
+        self.save_png_button = QPushButton(".png")
+        self.save_png_button.setStyleSheet("""
             QPushButton {
                 background-color: #2C2F3B;
                 color: white;
@@ -272,11 +276,29 @@ class TriadsWindow(QMainWindow):
                 padding: 4px;
                 border-radius: 4px;
             }
+            QPushButton:hover {
+                background-color: #404552;
+            }
         """)
-        self.save_button.clicked.connect(self.save_triangle_image)
-        self.sidebar_layout.addWidget(self.save_button, 0, Qt.AlignLeft)
+        self.save_png_button.clicked.connect(self.save_triangle_image)
+        save_button_layout.addWidget(self.save_png_button)
 
-        self.sidebar_layout.addStretch()
+        self.save_svg_button = QPushButton(".svg")
+        self.save_svg_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #404552;
+            }
+        """)
+        self.save_svg_button.clicked.connect(self.save_svg)
+        save_button_layout.addWidget(self.save_svg_button)
+        self.sidebar_layout.addLayout(save_button_layout)
 
         self.loading_label = QLabel()
         self.loading_label.setStyleSheet("color: grey;")
@@ -300,6 +322,11 @@ class TriadsWindow(QMainWindow):
 
         self.update_equave()
         self.collapse_sidebar()
+
+    def save_svg(self):
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
+        if file_path:
+            self.isohe_widget.save_svg(file_path)
 
     def mousePressEvent(self, event):
         focused_widget = self.focusWidget()

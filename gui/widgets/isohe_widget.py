@@ -5,6 +5,7 @@ from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSpinBox
 from PyQt5.QtCore import pyqtSignal, QTimer
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QPainter, QPolygonF, QBrush, QColor, QPen, QFont, QPainterPath
+from PyQt5.QtSvg import QSvgGenerator
 from fractions import Fraction
 from audio.generators import generate_combined_playback_buffer
 from theory.calculations import format_series_segment, calculate_edo_step
@@ -112,6 +113,9 @@ class IsoHEWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
+        self.paint_widget(painter)
+
+    def paint_widget(self, painter):
         painter.setRenderHint(QPainter.Antialiasing)
         painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
 
@@ -142,6 +146,22 @@ class IsoHEWidget(QWidget):
         bottom_y = self.v2.y()  # Both corners share the same y
         painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
         painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
+
+    def save_svg(self, file_path):
+        if not file_path:
+            return
+
+        svg_generator = QSvgGenerator()
+        svg_generator.setFileName(file_path)
+        svg_generator.setSize(self.size())
+        svg_generator.setViewBox(self.rect())
+        svg_generator.setTitle("Isoharmonic Triad")
+        svg_generator.setDescription("An SVG depiction of the isoharmonic triad display.")
+
+        painter = QPainter()
+        painter.begin(svg_generator)
+        self.paint_widget(painter)
+        painter.end()
 
     def draw_edo_dots(self, painter):
         try:
