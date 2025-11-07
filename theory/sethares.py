@@ -89,7 +89,7 @@ def transform_and_interpolate_to_triangle(r_raw, s_raw, z_raw, max_interval, gri
     z_normalized = 1 - z_normalized
 
     # Apply the Z-axis ramp transformation
-    z_transformed = np.power(np.maximum(0, z_normalized), z_axis_ramp)
+    z_transformed = np.power(np.maximum(-1, z_normalized), z_axis_ramp)
 
     # Use fixed range for interpolation grid based on target 0-1200 x-span
     xi = np.linspace(0, 1200, grid_resolution)
