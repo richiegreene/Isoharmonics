@@ -122,6 +122,34 @@ class TriadsWindow(QMainWindow):
         self.edo_button.setCheckable(True)
         self.edo_button.toggled.connect(self.toggle_edo_dots)
         self.sidebar_layout.addWidget(self.edo_button)
+
+        # Labels Button
+        self.labels_button = QPushButton("Labels")
+        self.labels_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:checked {
+                background-color: #0437f2; 
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:disabled {
+                background-color: #2C2F3B;
+                color: #555;
+                border: 1px solid #444;
+            }
+        """)
+        self.labels_button.setCheckable(True)
+        self.labels_button.toggled.connect(self.toggle_edo_labels)
+        self.labels_button.setEnabled(False)
+        self.sidebar_layout.addWidget(self.labels_button)
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -331,6 +359,12 @@ class TriadsWindow(QMainWindow):
 
     def toggle_edo_dots(self, checked):
         self.isohe_widget.set_show_edo_dots(checked)
+        self.labels_button.setEnabled(checked)
+        if not checked:
+            self.labels_button.setChecked(False)
+
+    def toggle_edo_labels(self, checked):
+        self.isohe_widget.set_show_edo_labels(checked)
 
     def toggle_sidebar(self):
         if self.sidebar.width() == 0:

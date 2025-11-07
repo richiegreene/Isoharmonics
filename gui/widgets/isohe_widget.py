@@ -43,9 +43,14 @@ class IsoHEWidget(QWidget):
         self.sound = None
         self.triangle_image = None
         self.show_edo_dots = False
+        self.show_edo_labels = False
 
     def set_show_edo_dots(self, show):
         self.show_edo_dots = show
+        self.update()
+
+    def set_show_edo_labels(self, show):
+        self.show_edo_labels = show
         self.update()
 
     def set_pivot_voice(self, voice):
@@ -173,6 +178,14 @@ class IsoHEWidget(QWidget):
                 y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
 
                 painter.drawEllipse(QPointF(x, y), 4, 4)
+
+                if self.show_edo_labels:
+                    label = f"[0, {i}, {i+j}]"
+                    font = QFont("Arial Nova", 10)
+                    painter.setFont(font)
+                    painter.setPen(Qt.white)
+                    text_width = painter.fontMetrics().width(label)
+                    painter.drawText(QPointF(x - text_width / 2, y - 8), label)
 
     def mousePressEvent(self, event):
         if self.triangle.containsPoint(event.pos(), Qt.OddEvenFill):
