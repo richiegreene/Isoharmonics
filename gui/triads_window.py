@@ -293,20 +293,29 @@ class TriadsWindow(QMainWindow):
 
         X, Y, Z = self.data_banks[model_name]
         
-        aspect_ratio = np.sqrt(3) / 2
-        fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=150)
-        
+        dpi = 150
         levels = 15 
         z_min, z_max = np.nanmin(Z), np.nanmax(Z)
-        
+        if np.isnan(z_min) or np.isnan(z_max): return None
         contour_levels = np.linspace(z_min, z_max, levels)
 
-        ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=0.7)
+        if model_name == 'harmonic_entropy':
+            grid_height, grid_width = Z.shape
+            fig, ax = plt.subplots(figsize=(grid_width / dpi, grid_height / dpi), dpi=dpi)
+            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=0.7, origin='lower')
+            ax.set_aspect('auto')
+        
+        elif model_name == 'sethares':
+            aspect_ratio = np.sqrt(3) / 2
+            fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=dpi)
+            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=0.7)
+            ax.set_aspect('equal')
 
-        ax.set_aspect('equal')
+        else:
+            return None
+
         ax.axis('off')
         fig.tight_layout(pad=0)
-        
         fig.patch.set_alpha(0.0)
         ax.patch.set_alpha(0.0)
 
