@@ -443,19 +443,34 @@ class TriadsWindow(QMainWindow):
         bank_name = self.bank_order[self.current_bank_index]
         
         if self.topo_button.isChecked():
-            image = self.topo_image_banks.get(bank_name)
+            if bank_name in self.data_banks:
+                topo_data = self.data_banks[bank_name]
+                self.isohe_widget.set_topo_data(topo_data, self.custom_cm, bank_name)
+            else:
+                self.isohe_widget.clear_topo_data()
+                self.isohe_widget.set_triangle_image(None)
         else:
+            self.isohe_widget.clear_topo_data()
             image = self.image_banks.get(bank_name)
-            
-        self.isohe_widget.set_triangle_image(image)
+            self.isohe_widget.set_triangle_image(image)
 
     def save_triangle_image(self):
-        if self.isohe_widget.triangle_image is None: return
+        current_model_name = self.bank_order[self.current_bank_index]
+        image_to_save = None
+
+        if self.topo_button.isChecked():
+            # If topo is checked, we need to generate the image with vector data for saving
+            if current_model_name in self.data_banks:
+                image_to_save = self.generate_topographic_image(current_model_name)
+        else:
+            image_to_save = self.isohe_widget.triangle_image
+
+        if image_to_save is None: return
+        
         file_path, _ = QFileDialog.getSaveFileName(self, "Save Image", "", "PNG Files (*.png)")
         if not file_path: return
 
-        source_image = self.isohe_widget.triangle_image
-        width, height = source_image.width(), source_image.height()
+        width, height = image_to_save.width(), image_to_save.height()
         cropped_image = QImage(width, height, QImage.Format_ARGB32)
         cropped_image.fill(Qt.transparent)
 
@@ -467,7 +482,7 @@ class TriadsWindow(QMainWindow):
 
         painter = QPainter(cropped_image)
         painter.setClipPath(path)
-        painter.drawImage(0, 0, source_image)
+        painter.drawImage(0, 0, image_to_save)
         painter.end()
         cropped_image.save(file_path)
 
@@ -480,7 +495,6 @@ class TriadsWindow(QMainWindow):
             model_name = 'harmonic_entropy'
             self.image_banks[model_name] = image
             self.data_banks[model_name] = (x, y, z)
-            self.topo_image_banks[model_name] = self.generate_topographic_image(model_name)
             
             self.set_current_model(model_name)
             self.loading_label.hide()
@@ -531,7 +545,6 @@ class TriadsWindow(QMainWindow):
             plt.close(fig)
 
             self.image_banks[model_name] = q_image
-            self.topo_image_banks[model_name] = self.generate_topographic_image(model_name)
             
             self.set_current_model(model_name)
         except Exception as e:

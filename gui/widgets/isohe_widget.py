@@ -21,23 +21,21 @@ class IsoHEWidget(QWidget):
         self.cents_label = {}
         self.note_labels = {}
         self.current_ratios = [1, 1, 1]
-        self.buffer_duration = 0.75  # seconds (new default)
-        self.fade_duration = 0.5    # seconds (new default)
-        self.echo_gain = 0.5         # new default
+        self.buffer_duration = 0.75
+        self.fade_duration = 0.5
+        self.echo_gain = 0.5
         self.last_played_ratios = None
-        self.stationary_update_interval = 200  # ms, default value
+        self.stationary_update_interval = 200
         self.stationary_timer = QTimer(self)
         self.stationary_timer.setInterval(self.stationary_update_interval)
         self.stationary_timer.timeout.connect(self.stationary_update_sound)
         self.update_dimensions()
 
-        self.pivot_voice = "lower"  # Default pivot
+        self.pivot_voice = "lower"
         self.pivot_pitch = 0.0
         self.pitch1 = 0.0
         self.pitch2 = 0.0
         self.pitch3 = 0.0
-
-        # No extra layout needed; triangle/svg will fill window
 
         self.drag_timer = QTimer(self)
         self.drag_timer.setSingleShot(True)
@@ -47,6 +45,22 @@ class IsoHEWidget(QWidget):
         self.triangle_image = None
         self.show_edo_dots = False
         self.show_edo_labels = False
+
+        self.topo_data = None
+        self.topo_colormap = None
+        self.topo_model_name = None
+
+    def set_topo_data(self, data, colormap, model_name):
+        self.topo_data = data
+        self.topo_colormap = colormap
+        self.topo_model_name = model_name
+        self.update()
+
+    def clear_topo_data(self):
+        self.topo_data = None
+        self.topo_colormap = None
+        self.topo_model_name = None
+        self.update()
 
     def set_show_edo_dots(self, show):
         self.show_edo_dots = show
@@ -62,14 +76,13 @@ class IsoHEWidget(QWidget):
                 self.pivot_pitch = self.pitch3
             elif voice == "middle":
                 self.pivot_pitch = self.pitch2
-            else:  # lower
+            else:
                 self.pivot_pitch = self.pitch1
             self.pivot_voice = voice
 
     def update_ratios_label(self):
         from theory.calculations import format_series_segment
         from gui.widgets.draggable_fraction_line_edit import DraggableFractionLineEdit
-        # Map each ratio to nearest 95-odd-limit interval
         intervals = DraggableFractionLineEdit().generate_95_odd_limit_intervals()
         def nearest_interval(val):
             return min(intervals, key=lambda x: abs(float(x) - float(val)))
@@ -85,13 +98,11 @@ class IsoHEWidget(QWidget):
             font = QFont("Arial Nova", 14)
             painter.setFont(font)
             painter.setPen(Qt.white)
-            # Position above cursor
             x = self.last_drag_point.x()
             y = self.last_drag_point.y() - 24
             painter.drawText(QPointF(x, y), ratios_str)
             
     def on_drag_timeout(self):
-        # This method is called when the drag_timer times out. Implement logic as needed.
         pass
 
     def set_equave(self, equave):
@@ -100,6 +111,7 @@ class IsoHEWidget(QWidget):
 
     def set_triangle_image(self, image):
         self.triangle_image = image
+        self.clear_topo_data()
         self.update()
 
     def update_dimensions(self):
@@ -107,9 +119,9 @@ class IsoHEWidget(QWidget):
         side_length = min(self.width(), self.height()) - 2 * padding
         height = (np.sqrt(3) / 2) * side_length
         
-        self.v1 = QPointF(self.width() / 2, padding) # Top vertex
-        self.v2 = QPointF(self.width() / 2 - side_length / 2, padding + height) # Bottom-left
-        self.v3 = QPointF(self.width() / 2 + side_length / 2, padding + height) # Bottom-right
+        self.v1 = QPointF(self.width() / 2, padding)
+        self.v2 = QPointF(self.width() / 2 - side_length / 2, padding + height)
+        self.v3 = QPointF(self.width() / 2 + side_length / 2, padding + height)
         self.triangle = QPolygonF([self.v1, self.v2, self.v3])
         self.update()
 
@@ -117,11 +129,15 @@ class IsoHEWidget(QWidget):
         painter = QPainter(self)
         self.paint_widget(painter)
 
-    def paint_widget(self, painter):
+    def paint_widget(self, painter, for_svg=False):
         painter.setRenderHint(QPainter.Antialiasing)
-        painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
-
-        if self.triangle_image:
+        
+        # Draw background or image
+        if self.topo_data and self.topo_colormap and self.topo_model_name:
+            painter.setBrush(QBrush(QColor(11, 6, 86)))
+            painter.drawPolygon(self.triangle)
+            self.paint_topo_contours(painter, self.topo_data, self.topo_colormap, self.topo_model_name)
+        elif self.triangle_image:
             rect = self.triangle.boundingRect().toRect()
             path = QPainterPath()
             path.addPolygon(self.triangle)
@@ -132,22 +148,23 @@ class IsoHEWidget(QWidget):
             painter.setBrush(QBrush(QColor(11, 6, 86)))
             painter.drawPolygon(self.triangle)
 
-        if self.show_edo_dots:
-            self.draw_edo_dots(painter)
+        if not for_svg:
+            painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
+            if self.show_edo_dots:
+                self.draw_edo_dots(painter)
 
-        font = QFont("Arial Nova", 12)
-        painter.setFont(font)
-        painter.setPen(Qt.white)
+            font = QFont("Arial Nova", 12)
+            painter.setFont(font)
+            painter.setPen(Qt.white)
 
-        equave_ratio = self.equave
-        top_corner_ratio = [1, 1, equave_ratio]
-        bottom_right_ratio = [1, equave_ratio, equave_ratio]
+            equave_ratio = self.equave
+            top_corner_ratio = [1, 1, equave_ratio]
+            bottom_right_ratio = [1, equave_ratio, equave_ratio]
 
-        painter.drawText(self.v1 + QPointF(-15, -15), format_series_segment(top_corner_ratio))
-        # Vertically align both bottom labels with the bottom side of the triangle
-        bottom_y = self.v2.y()  # Both corners share the same y
-        painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
-        painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
+            painter.drawText(self.v1 + QPointF(-15, -15), format_series_segment(top_corner_ratio))
+            bottom_y = self.v2.y()
+            painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
+            painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
 
     def save_svg(self, file_path, topo_data=None, colormap=None, model_name=None):
         if not file_path:
@@ -163,14 +180,19 @@ class IsoHEWidget(QWidget):
         painter = QPainter()
         painter.begin(svg_generator)
         
+        # Temporarily set topo data for SVG generation if provided
+        original_topo_data = (self.topo_data, self.topo_colormap, self.topo_model_name)
         if topo_data and colormap and model_name:
-            self.paint_topo_svg(painter, topo_data, colormap, model_name)
-        else:
-            self.paint_widget(painter)
+            self.set_topo_data(topo_data, colormap, model_name)
+        
+        self.paint_widget(painter, for_svg=True)
+
+        # Restore original topo data
+        self.set_topo_data(*original_topo_data)
 
         painter.end()
 
-    def paint_topo_svg(self, painter, topo_data, colormap, model_name):
+    def paint_topo_contours(self, painter, topo_data, colormap, model_name):
         X, Y, Z = topo_data
         levels = 15
         z_min, z_max = np.nanmin(Z), np.nanmax(Z)
@@ -178,7 +200,6 @@ class IsoHEWidget(QWidget):
             return
         contour_levels = np.linspace(z_min, z_max, levels)
 
-        # Create a dummy figure to generate contour data
         fig, ax = plt.subplots()
         if model_name == 'harmonic_entropy':
             contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=0.7, origin='lower')
@@ -188,60 +209,42 @@ class IsoHEWidget(QWidget):
             plt.close(fig)
             return
         
-        # Get the bounding box of the triangle in the widget's coordinates
         widget_triangle_rect = self.triangle.boundingRect()
+        x_min_data, x_max_data = np.nanmin(X), np.nanmax(X)
+        y_min_data, y_max_data = np.nanmin(Y), np.nanmax(Y)
 
-        # Get the bounding box of the data
-        x_min, x_max = np.nanmin(X), np.nanmax(X)
-        y_min, y_max = np.nanmin(Y), np.nanmax(Y)
-
-        painter.setRenderHint(QPainter.Antialiasing)
-
-        # Clip to triangle
         path = QPainterPath()
         path.addPolygon(self.triangle)
         painter.setClipPath(path)
 
-        for i, collection in enumerate(contours.collections):
+        for collection in contours.collections:
             color = collection.get_edgecolor()[0]
             qt_color = QColor.fromRgbF(color[0], color[1], color[2], color[3])
             pen = QPen(qt_color, 0.7)
             painter.setPen(pen)
 
-            for path in collection.get_paths():
+            for path_mpl in collection.get_paths():
                 q_path = QPainterPath()
-                for j, (vertex, code) in enumerate(path.iter_segments()):
-                    # Transform vertex from data coordinates to widget coordinates
-                    x_norm = (vertex[0] - x_min) / (x_max - x_min)
-                    y_norm = (vertex[1] - y_min) / (y_max - y_min)
-                    
-                    # The y-axis for matplotlib is inverted compared to Qt
-                    y_norm = 1 - y_norm
+                for i, (vertex, code) in enumerate(path_mpl.iter_segments()):
+                    x_norm = (vertex[0] - x_min_data) / (x_max_data - x_min_data)
+                    y_norm = 1 - ((vertex[1] - y_min_data) / (y_max_data - y_min_data))
 
                     x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
                     y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
                     
-                    if code == MplPath.MOVETO:
+                    if i == 0:
                         q_path.moveTo(x_widget, y_widget)
-                    elif code == MplPath.LINETO:
+                    else:
                         q_path.lineTo(x_widget, y_widget)
-                    elif code == MplPath.CLOSEPOLY:
-                        q_path.closeSubpath()
-
                 painter.drawPath(q_path)
         
         painter.setClipping(False)
         plt.close(fig)
-        
-        # Draw the rest of the widget
-        self.paint_widget(painter)
-
 
     def draw_edo_dots(self, painter):
         try:
             edo = int(self.main_app.edo_entry.text())
-            if edo <= 0:
-                return
+            if edo <= 0: return
         except (ValueError, AttributeError):
             return
 
@@ -258,15 +261,13 @@ class IsoHEWidget(QWidget):
                 cx = i * step_in_cents
                 cy = j * step_in_cents
 
-                if cx + cy > equave_cents:
-                    continue
+                if cx + cy > equave_cents: continue
 
                 w1 = cy / equave_cents
                 w3 = cx / equave_cents
                 w2 = 1.0 - w1 - w3
 
-                if not (0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1):
-                    continue
+                if not (0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1): continue
 
                 x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
                 y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
@@ -307,23 +308,18 @@ class IsoHEWidget(QWidget):
         self.stop_sound()
         
     def stationary_update_sound(self):
-        # Simulate minimal cursor movement in a small circle to avoid stationary pulsing
         if self.dragging and self.last_drag_point is not None:
-            # Parameters for minimal movement
-            radius = 0.01  # pixels
+            radius = 0.01
             if not hasattr(self, 'stationary_angle'):
                 self.stationary_angle = 0.0
-            self.stationary_angle += 0.2  # radians per update
-            # Calculate new position in a small circle around the last_drag_point
+            self.stationary_angle += 0.2
             dx = radius * np.cos(self.stationary_angle)
             dy = radius * np.sin(self.stationary_angle)
             moved_point = QPointF(self.last_drag_point.x() + dx, self.last_drag_point.y() + dy)
             self.update_ratios_and_sound(moved_point)
-            # Do not update self.last_drag_point, so the circle stays centered
 
     def update_ratios_and_sound(self, pos):
         if not self.triangle.containsPoint(pos, Qt.OddEvenFill):
-            print("Mouse outside triangle, skipping update.")
             return
 
         p = np.array([pos.x(), pos.y()])
@@ -332,9 +328,7 @@ class IsoHEWidget(QWidget):
         v3 = np.array([self.v3.x(), self.v3.y()])
 
         detT = (v2[1] - v3[1]) * (v1[0] - v3[0]) + (v3[0] - v2[0]) * (v1[1] - v3[1])
-        if abs(detT) < 1e-8:
-            print("Degenerate triangle: detT is zero.")
-            return
+        if abs(detT) < 1e-8: return
 
         w1 = ((v2[1] - v3[1]) * (p[0] - v3[0]) + (v3[0] - v2[0]) * (p[1] - v3[1])) / detT
         w2 = ((v3[1] - v1[1]) * (p[0] - v3[0]) + (v1[0] - v3[0]) * (p[1] - v3[1])) / detT
@@ -342,42 +336,25 @@ class IsoHEWidget(QWidget):
 
         w = np.array([w1, w2, w3])
         w[w < 0] = 0
-        if w.sum() == 0:
-            print("All barycentric weights are zero.")
-            return
+        if w.sum() == 0: return
         w /= w.sum()
 
-        # Triangular mapping
         equave_cents = 1200 * np.log2(float(self.equave))
         cx = w[2] * equave_cents
         cy = w[0] * equave_cents
 
-        # p is the absolute pitch of the pivot voice in cents
-        p = self.pivot_pitch
+        p_pitch = self.pivot_pitch
 
         if self.pivot_voice == "upper":
-            self.pitch1 = p - cx - cy
-            self.pitch2 = p - cy
-            self.pitch3 = p
+            self.pitch1, self.pitch2, self.pitch3 = p_pitch - cx - cy, p_pitch - cy, p_pitch
         elif self.pivot_voice == "middle":
-            self.pitch1 = p - cx
-            self.pitch2 = p
-            self.pitch3 = p + cy
-        else:  # lower
-            self.pitch1 = p
-            self.pitch2 = p + cx
-            self.pitch3 = p + cx + cy
+            self.pitch1, self.pitch2, self.pitch3 = p_pitch - cx, p_pitch, p_pitch + cy
+        else:
+            self.pitch1, self.pitch2, self.pitch3 = p_pitch, p_pitch + cx, p_pitch + cx + cy
 
-        # Convert back to ratios for sound generation
-        def cents_to_ratio(c):
-            return 2 ** (c / 1200)
-
-        r1 = cents_to_ratio(self.pitch1)
-        r2 = cents_to_ratio(self.pitch2)
-        r3 = cents_to_ratio(self.pitch3)
-        new_ratios = [r1, r2, r3]
+        def cents_to_ratio(c): return 2 ** (c / 1200)
+        new_ratios = [cents_to_ratio(p) for p in [self.pitch1, self.pitch2, self.pitch3]]
         
-        # --- Display Logic ---
         self.cents_label["3"].setText(f"{int(round(self.pitch3))}")
         self.cents_label["2"].setText(f"{int(round(self.pitch2))}")
         self.cents_label["1"].setText(f"{int(round(self.pitch1))}")
@@ -390,144 +367,74 @@ class IsoHEWidget(QWidget):
             octave = 4 + (pitch // 1200)
             note_name_with_octave = note_name + to_subscript(int(octave))
             error_str = f"{round(-error):+}".replace("-", "-")
-            if error_str in ["+0", "-0"]:
-                error_str = ""
+            if error_str in ["+0", "-0"]: error_str = ""
             self.note_labels[str(i + 1)].setText(f"{note_name_with_octave} {error_str}")
 
-        # 2. Ratio Display: Format the ratios based on their absolute values.
         self.current_ratios = new_ratios
         self.update_ratios_label()
 
-        # --- Sound Generation ---
-        if not all(np.isfinite(new_ratios)) or any(r <= 0 for r in new_ratios):
-            print("Invalid ratios computed:", new_ratios)
-            return
-
+        if not all(np.isfinite(new_ratios)) or any(r <= 0 for r in new_ratios): return
         if self.last_played_ratios is None or any(abs(a - b) > 1e-6 for a, b in zip(new_ratios, self.last_played_ratios)):
             self.update_sound()
             self.last_played_ratios = list(new_ratios)
 
     def update_sound(self):
-        if not self.dragging:
-            return
-
+        if not self.dragging: return
         old_sound = self.sound
-
         try:
-            # Get the first isoharmonic ratio from the main window's table
             first_iso_item = self.main_app.table.item(1, 1)
-            if first_iso_item:
-                first_iso_ratio = Fraction(first_iso_item.text())
-                base_freq = float(first_iso_ratio) * 261.6
-            else:
-                base_freq = 261.6 # Fallback
+            base_freq = float(Fraction(first_iso_item.text())) * 261.6 if first_iso_item else 261.6
         except (ValueError, ZeroDivisionError):
             base_freq = 261.6
 
-        if len(self.current_ratios) != 3 or any(r <= 0 or not np.isfinite(r) for r in self.current_ratios):
-            print("Invalid current_ratios for sound:", self.current_ratios)
-            return
-
+        if len(self.current_ratios) != 3 or any(r <= 0 or not np.isfinite(r) for r in self.current_ratios): return
         triangle_freqs = [base_freq * r for r in self.current_ratios]
-        if any(f <= 0 or not np.isfinite(f) for f in triangle_freqs):
-            print("Invalid triangle frequencies:", triangle_freqs)
-            return
+        if any(f <= 0 or not np.isfinite(f) for f in triangle_freqs): return
 
-        timbre = getattr(self.main_app.visualizer, "current_timbre", None)
-        roll_off = getattr(self.main_app, "roll_off_rate", 0.0)
-        phase = getattr(self.main_app, "phase_factor", 0.0)
-        duration = 0.7
-        if not (0.01 <= duration <= 10.0):
-            print("Invalid duration:", duration)
-            return
-
-        all_frequencies = []
-        all_ratios = []
-
-        if timbre and 'ratios' in timbre:
-            timbre_ratios = timbre['ratios']
-            for base_f, tri_ratio in zip(triangle_freqs, self.current_ratios):
-                for t_ratio in timbre_ratios:
-                    freq = base_f * float(t_ratio)
-                    ratio = float(tri_ratio * t_ratio)
-                    if freq > 0 and np.isfinite(freq):
-                        all_frequencies.append(freq)
-                        all_ratios.append(ratio)
-        else:
-            all_frequencies = triangle_freqs
-            all_ratios = self.current_ratios
-
-        triangle_freqs = [base_freq * r for r in self.current_ratios]
-        if any(f <= 0 or not np.isfinite(f) for f in triangle_freqs):
-            print("Invalid triangle frequencies:", triangle_freqs)
-            return
-
-        # Restore timbre logic and continuous playback
         timbre = getattr(self.main_app.visualizer, "current_timbre", None)
         roll_off = getattr(self.main_app, "roll_off_rate", 0.0)
         phase = getattr(self.main_app, "phase_factor", 0.0)
         duration = self.buffer_duration
-        all_frequencies = []
-        all_ratios = []
+        all_frequencies, all_ratios = [], []
 
         if timbre and 'ratios' in timbre:
-            timbre_ratios = timbre['ratios']
             for base_f, tri_ratio in zip(triangle_freqs, self.current_ratios):
-                for t_ratio in timbre_ratios:
-                    freq = base_f * float(t_ratio)
-                    ratio = float(tri_ratio * t_ratio)
+                for t_ratio in timbre['ratios']:
+                    freq, ratio = base_f * float(t_ratio), float(tri_ratio * t_ratio)
                     if freq > 0 and np.isfinite(freq):
                         all_frequencies.append(freq)
                         all_ratios.append(ratio)
         else:
-            # Chorus effect: duplicate each voice with slight detuning
-            detune_cents = [0, 1, -1]
             for freq in triangle_freqs:
-                for cents in detune_cents:
-                    detuned_freq = freq * (2 ** (cents / 1200))
-                    all_frequencies.append(detuned_freq)
+                for cents in [0, 1, -1]:
+                    all_frequencies.append(freq * (2 ** (cents / 1200)))
             all_ratios = [1] * len(all_frequencies)
 
         try:
-            buffer = generate_combined_playback_buffer(
-                all_frequencies, all_ratios, duration, roll_off, phase
-            )
-            if buffer is None or buffer.size == 0:
-                print("Generated buffer is empty.")
-                return
+            buffer = generate_combined_playback_buffer(all_frequencies, all_ratios, duration, roll_off, phase)
+            if buffer is None or buffer.size == 0: return
 
-            # Fade-in/out envelope
             fade_len = int(self.fade_duration * buffer.shape[0])
             if fade_len > 0:
-                fade_in = np.linspace(0, 1, fade_len)
-                fade_out = np.linspace(1, 0, fade_len)
+                fade_in, fade_out = np.linspace(0, 1, fade_len), np.linspace(1, 0, fade_len)
                 buffer[:fade_len] = (buffer[:fade_len].T * fade_in).T
                 buffer[-fade_len:] = (buffer[-fade_len:].T * fade_out).T
 
-            # Optional: add echo/chorus delay
             echo_delay = int(0.03 * buffer.shape[0])
-            echo_gain = self.echo_gain
             if echo_delay > 0:
                 echo_buf = np.zeros_like(buffer)
-                echo_buf[echo_delay:] = (buffer[:-echo_delay] * echo_gain).astype(buffer.dtype)
+                echo_buf[echo_delay:] = (buffer[:-echo_delay] * self.echo_gain).astype(buffer.dtype)
                 buffer = np.clip(buffer + echo_buf, -32768, 32767)
 
-            # Cross-fade: start new sound, fade out old sound
             self.sound = pygame.sndarray.make_sound(buffer)
             self.sound.play(loops=-1)
-            if old_sound:
-                try:
-                    old_sound.fadeout(int(self.fade_duration * 1000))
-                except Exception as e:
-                    print("Exception during fadeout:", e)
+            if old_sound: old_sound.fadeout(int(self.fade_duration * 1000))
         except Exception as e:
-            print("Exception during sound generation:", e)
             self.sound = None
 
     def stop_sound(self):
         if self.sound:
             try:
                 self.sound.fadeout(int(self.fade_duration * 1000))
-            except Exception as e:
-                print("Exception during fadeout:", e)
+            except Exception: pass
             self.sound = None
