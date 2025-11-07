@@ -113,4 +113,4 @@ def generate_triangle_image(equave_ratio, width, height):
     q_image = QImage.fromData(buf.read())
     plt.close(fig)
 
-    return q_image
+    return q_image, xv_mask, yv_mask, entropy2

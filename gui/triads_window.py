@@ -51,6 +51,10 @@ class TriadsWindow(QMainWindow):
             'harmonic_entropy': None,
             'sethares': None
         }
+        self.data_banks = {
+            'harmonic_entropy': None,
+            'sethares': None
+        }
         self.current_bank_index = 0
         self.bank_order = ['blank', 'harmonic_entropy', 'sethares']
 
@@ -298,6 +302,22 @@ class TriadsWindow(QMainWindow):
         """)
         self.save_svg_button.clicked.connect(self.save_svg)
         save_button_layout.addWidget(self.save_svg_button)
+
+        self.save_obj_button = QPushButton(".obj")
+        self.save_obj_button.setStyleSheet("""
+            QPushButton {
+                background-color: #2C2F3B;
+                color: white;
+                border: 1px solid #555;
+                padding: 4px;
+                border-radius: 4px;
+            }
+            QPushButton:hover {
+                background-color: #404552;
+            }
+        """)
+        self.save_obj_button.clicked.connect(self.save_obj)
+        save_button_layout.addWidget(self.save_obj_button)
         self.sidebar_layout.addLayout(save_button_layout)
 
         self.loading_label = QLabel()
@@ -327,6 +347,60 @@ class TriadsWindow(QMainWindow):
         file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
         if file_path:
             self.isohe_widget.save_svg(file_path)
+
+    def save_obj(self):
+        current_model_name = self.bank_order[self.current_bank_index]
+        if current_model_name not in self.data_banks or self.data_banks[current_model_name] is None:
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(self, "Save OBJ", "", "OBJ Files (*.obj)")
+        if not file_path:
+            return
+
+        X, Y, Z = self.data_banks[current_model_name]
+        
+        # Normalize Z to be between 0 and 100 for height
+        z_min, z_max = np.nanmin(Z), np.nanmax(Z)
+        if z_max - z_min > 0:
+            Z_normalized = 100 * (Z - z_min) / (z_max - z_min)
+        else:
+            Z_normalized = np.zeros_like(Z)
+
+
+        rows, cols = X.shape
+        vertices = []
+        faces = []
+        
+        # Create a map from (row, col) to vertex index
+        vertex_map = {}
+        vertex_idx = 1
+
+        for r in range(rows):
+            for c in range(cols):
+                if not np.isnan(Z_normalized[r, c]):
+                    vertices.append(f"v {X[r, c]} {Y[r, c]} {Z_normalized[r, c]}\n")
+                    vertex_map[(r, c)] = vertex_idx
+                    vertex_idx += 1
+
+        for r in range(rows - 1):
+            for c in range(cols - 1):
+                # Check if the four vertices of a quad are valid
+                v1_idx = vertex_map.get((r, c))
+                v2_idx = vertex_map.get((r + 1, c))
+                v3_idx = vertex_map.get((r + 1, c + 1))
+                v4_idx = vertex_map.get((r, c + 1))
+
+                if v1_idx and v2_idx and v3_idx and v4_idx:
+                    faces.append(f"f {v1_idx} {v2_idx} {v3_idx} {v4_idx}\n")
+                elif v1_idx and v2_idx and v3_idx: # Triangle face
+                    faces.append(f"f {v1_idx} {v2_idx} {v3_idx}\n")
+                elif v1_idx and v3_idx and v4_idx: # Triangle face
+                    faces.append(f"f {v1_idx} {v3_idx} {v4_idx}\n")
+
+
+        with open(file_path, 'w') as f:
+            f.writelines(vertices)
+            f.writelines(faces)
 
     def mousePressEvent(self, event):
         focused_widget = self.focusWidget()
@@ -497,13 +571,14 @@ class TriadsWindow(QMainWindow):
         if hasattr(self.isohe_widget, 'equave'):
             self.loading_label.setText("Loading Harmonic Entropy...")
             self.loading_label.show()
-            image = generate_triangle_image(
+            image, x, y, z = generate_triangle_image(
                 self.isohe_widget.equave,
                 self.isohe_widget.width(),
                 self.isohe_widget.height()
             )
             if image:
                 self.image_banks['harmonic_entropy'] = image
+                self.data_banks['harmonic_entropy'] = (x, y, z)
                 self.current_bank_index = self.bank_order.index('harmonic_entropy')
                 self.isohe_widget.set_triangle_image(image)
             self.loading_label.hide()
@@ -565,6 +640,7 @@ class TriadsWindow(QMainWindow):
     def on_sethares_finished(self, result):
         try:
             x_tri_grid, y_tri_grid, z_tri_interpolated = result
+            self.data_banks['sethares'] = result
 
             # The data represents an equilateral triangle.
             # The aspect ratio is sqrt(3)/2.
