@@ -192,7 +192,7 @@ class IsoHEWidget(QWidget):
 
     def paint_topo_contours(self, painter, topo_data, colormap, model_name):
         X, Y, Z = topo_data
-        levels = 15
+        levels = 30
         z_min, z_max = np.nanmin(Z), np.nanmax(Z)
         if np.isnan(z_min) or np.isnan(z_max):
             return
@@ -200,9 +200,9 @@ class IsoHEWidget(QWidget):
 
         fig, ax = plt.subplots()
         if model_name == 'harmonic_entropy':
-            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=0.7, origin='lower')
+            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=1.4, origin='lower')
         elif model_name == 'sethares':
-            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=0.7)
+            contours = ax.contour(X, Y, Z, levels=contour_levels, cmap=colormap, linewidths=1.4)
         else:
             plt.close(fig)
             return
@@ -218,7 +218,7 @@ class IsoHEWidget(QWidget):
         for collection in contours.collections:
             color = collection.get_edgecolor()[0]
             qt_color = QColor.fromRgbF(color[0], color[1], color[2], color[3])
-            pen = QPen(qt_color, 0.7)
+            pen = QPen(qt_color, 1.4)
             painter.setPen(pen)
 
             for path_mpl in collection.get_paths():

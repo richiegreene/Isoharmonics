@@ -306,13 +306,13 @@ class TriadsWindow(QMainWindow):
         if model_name == 'harmonic_entropy':
             grid_height, grid_width = Z.shape
             fig, ax = plt.subplots(figsize=(grid_width / dpi, grid_height / dpi), dpi=dpi)
-            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=2, origin='lower')
+            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=4, origin='lower')
             ax.set_aspect('auto')
         
         elif model_name == 'sethares':
             aspect_ratio = np.sqrt(3) / 2
             fig, ax = plt.subplots(figsize=(8, 8 * aspect_ratio), dpi=dpi)
-            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=2)
+            ax.contour(X, Y, Z, levels=contour_levels, cmap=self.custom_cm, linewidths=4)
             ax.set_aspect('equal')
 
         else:
@@ -518,7 +518,7 @@ class TriadsWindow(QMainWindow):
 
             spectrum_data = {'freq': partials, 'amp': amplitudes}
             
-            self.worker = SetharesWorker(spectrum_data, ref_freq, max_interval, 0.01, 400, 2.0, 0)
+            self.worker = SetharesWorker(spectrum_data, ref_freq, max_interval, 0.01, 400, 1.5, 0)
             self.worker.finished.connect(self.on_sethares_finished)
             self.worker.start()
         except Exception as e:
