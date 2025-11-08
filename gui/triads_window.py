@@ -714,6 +714,81 @@ class TriadsWindow(QMainWindow):
             except Exception:
                 pass
 
+            # If this is the Harmonic Entropy model, ensure the XY shape is an equilateral triangle
+            # by computing an affine transform from the detected corner triangle -> canonical equilateral triangle.
+            try:
+                if model_name == 'harmonic_entropy':
+                    pts = np_verts_transformed[:, :2]
+                    # Monotone chain convex hull implementation
+                    def _convex_hull(points):
+                        pts_sorted = sorted(map(tuple, points.tolist()))
+                        if len(pts_sorted) <= 1:
+                            return pts_sorted
+                        def cross(o, a, b):
+                            return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+                        lower = []
+                        for p in pts_sorted:
+                            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                                lower.pop()
+                            lower.append(p)
+                        upper = []
+                        for p in reversed(pts_sorted):
+                            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                                upper.pop()
+                            upper.append(p)
+                        hull = lower[:-1] + upper[:-1]
+                        return hull
+
+                    hull = _convex_hull(pts)
+                    if len(hull) >= 3:
+                        # choose the triangle of hull vertices with maximal area
+                        hull_arr = np.array(hull)
+                        n = len(hull_arr)
+                        best_area = 0.0
+                        best_tri = None
+                        for i in range(n):
+                            for j in range(i+1, n):
+                                for k in range(j+1, n):
+                                    a = hull_arr[i]
+                                    b = hull_arr[j]
+                                    c = hull_arr[k]
+                                    area = abs((b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])) * 0.5
+                                    if area > best_area:
+                                        best_area = area
+                                        best_tri = (a, b, c)
+
+                        if best_tri is not None and best_area > 1e-12:
+                            src = np.array(best_tri)
+                            # compute centroid and radius to construct canonical equilateral triangle
+                            src_centroid = src.mean(axis=0)
+                            src_r = np.mean(np.linalg.norm(src - src_centroid, axis=1))
+                            # equilateral triangle vertices (pointing up) relative to centroid
+                            r = src_r
+                            tri_target = np.array([
+                                [0.0, r],
+                                [-np.sqrt(3)/2 * r, -0.5 * r],
+                                [ np.sqrt(3)/2 * r, -0.5 * r]
+                            ])
+                            # translate target to have same centroid as source
+                            tgt_centroid = tri_target.mean(axis=0)
+                            tri_target = tri_target - tgt_centroid + src_centroid
+
+                            # Solve affine transform A (2x2) and t s.t. A @ src_i + t = tgt_i
+                            S = np.hstack([src, np.ones((3,1))])  # 3x3
+                            T = tri_target  # 3x2
+                            # Solve for 3x2 matrix M where S @ M = T, M contains [A|t]
+                            try:
+                                M, *_ = np.linalg.lstsq(S, T, rcond=None)
+                                A = M[:2, :].T
+                                t = M[2, :]
+                                # apply transform
+                                transformed_xy = (pts @ A.T) + t
+                                np_verts_transformed[:, :2] = transformed_xy
+                            except Exception:
+                                pass
+            except Exception:
+                pass
+
             faces = []
             for r in range(rows - 1):
                 for c in range(cols - 1):
