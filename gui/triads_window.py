@@ -27,6 +27,139 @@ except Exception:
     glGetDoublev = None
     gluProject = None
 
+try:
+    # additional GL material and lighting functions for shininess/specular control
+    from OpenGL.GL import (
+        glMaterialfv, GL_FRONT_AND_BACK, GL_SPECULAR, GL_SHININESS,
+        glEnable, glDisable, GL_COLOR_MATERIAL, glColorMaterial, GL_AMBIENT_AND_DIFFUSE,
+        GL_LIGHTING, GL_LIGHT0, glLightfv, GL_POSITION, GL_DIFFUSE, GL_AMBIENT, GL_SPECULAR as _GL_SPECULAR,
+        glPushAttrib, glPopAttrib, GL_LIGHTING_BIT, glShadeModel, GL_SMOOTH, glNormal3f, GL_NORMALIZE
+    )
+except Exception:
+    glMaterialfv = None
+    GL_FRONT_AND_BACK = None
+    GL_SPECULAR = None
+    GL_SHININESS = None
+    glEnable = None
+    glDisable = None
+    GL_COLOR_MATERIAL = None
+    glColorMaterial = None
+    GL_AMBIENT_AND_DIFFUSE = None
+    GL_LIGHTING = None
+    GL_LIGHT0 = None
+    glLightfv = None
+    GL_POSITION = None
+    GL_DIFFUSE = None
+    GL_AMBIENT = None
+    _GL_SPECULAR = None
+    glPushAttrib = None
+    glPopAttrib = None
+    GL_LIGHTING_BIT = None
+    glShadeModel = None
+    GL_SMOOTH = None
+    glNormal3f = None
+    GL_NORMALIZE = None
+
+# Subclass GLMeshItem to set OpenGL material properties for increased shininess where available
+_ShinyMeshClass = None
+if 'GLMeshItem' in globals() and glMaterialfv is not None:
+    try:
+        class ShinyMesh(GLMeshItem):
+            def __init__(self, *args, specular=(1.0, 1.0, 1.0), shininess=80.0, **kwargs):
+                super().__init__(*args, **kwargs)
+                self._specular = tuple(specular)
+                self._shininess = float(shininess)
+
+            def draw(self):
+                # set material specular and shininess for this mesh before drawing
+                pushed = False
+                try:
+                    # Push lighting attributes if available so changes are scoped
+                    if glPushAttrib is not None and GL_LIGHTING_BIT is not None:
+                        try:
+                            glPushAttrib(GL_LIGHTING_BIT)
+                            pushed = True
+                        except Exception:
+                            pushed = False
+
+                    # Enable lighting and a single light for better specular highlights
+                    if glEnable is not None and GL_LIGHTING is not None:
+                        try:
+                            glEnable(GL_LIGHTING)
+                        except Exception:
+                            pass
+                    if glEnable is not None and GL_LIGHT0 is not None:
+                        try:
+                            glEnable(GL_LIGHT0)
+                        except Exception:
+                            pass
+
+                    # Set a simple positional white light
+                    if glLightfv is not None and GL_LIGHT0 is not None and GL_POSITION is not None:
+                        try:
+                            glLightfv(GL_LIGHT0, GL_POSITION, (1.0, 1.0, 1.0, 0.0))
+                        except Exception:
+                            pass
+                    if glLightfv is not None and GL_LIGHT0 is not None and GL_DIFFUSE is not None:
+                        try:
+                            glLightfv(GL_LIGHT0, GL_DIFFUSE, (1.0, 1.0, 1.0, 1.0))
+                        except Exception:
+                            pass
+                    if glLightfv is not None and GL_LIGHT0 is not None and GL_SPECULAR is not None:
+                        try:
+                            glLightfv(GL_LIGHT0, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
+                        except Exception:
+                            pass
+
+                    if glEnable is not None and GL_COLOR_MATERIAL is not None:
+                        try:
+                            glEnable(GL_COLOR_MATERIAL)
+                            try:
+                                glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass
+
+                    if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SPECULAR is not None:
+                        try:
+                            glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (*self._specular, 1.0))
+                        except Exception:
+                            pass
+                    if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SHININESS is not None:
+                        try:
+                            # GL_SHININESS expects a single float
+                            glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, self._shininess)
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                # call base draw method
+                try:
+                    res = super().draw()
+                except Exception:
+                    try:
+                        res = super().paint()
+                    except Exception:
+                        res = None
+
+                # restore previous lighting attributes
+                try:
+                    if pushed and glPopAttrib is not None:
+                        try:
+                            glPopAttrib()
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
+
+                return res
+
+        _ShinyMeshClass = ShinyMesh
+    except Exception:
+        _ShinyMeshClass = None
+
 class SetharesWorker(QThread):
     finished = pyqtSignal(object)
 
@@ -711,7 +844,7 @@ class TriadsWindow(QMainWindow):
                 z_boost = 12.0
                 # apply additional 3x boost for the Sethares model only
                 if model_name == 'sethares':
-                    z_boost *= 9.0
+                    z_boost *= 3.0
                 if np_verts_transformed.shape[1] > 2:
                     np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
             except Exception:
@@ -815,7 +948,15 @@ class TriadsWindow(QMainWindow):
                 except Exception:
                     pass
 
-            mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=(0.85, 0.85, 0.85, 1.0))
+            blue_color = (4/255.0, 55/255.0, 242/255.0, 1.0)
+            # Create a shiny mesh if our ShinyMesh subclass is available; otherwise fall back to GLMeshItem
+            if _ShinyMeshClass is not None:
+                try:
+                    mesh_item = _ShinyMeshClass(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color, specular=(1.0, 1.0, 1.0), shininess=120.0)
+                except Exception:
+                    mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color)
+            else:
+                mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color)
             # ensure mesh is centered in the GLView and default to a bird's-eye, zoomed-in view
             try:
                 # Prefer an orthographic, top-down view so XY proportions are preserved
