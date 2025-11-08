@@ -1,6 +1,6 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup, QInputDialog
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
-from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor
+from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor, QVector3D
 from fractions import Fraction
 import numpy as np
 import io
@@ -11,6 +11,21 @@ from theory.triangle_generator import generate_triangle_image
 from theory.calculations import calculate_edo_step
 from theory.notation.engine import calculate_single_note
 from theory.sethares import get_dissonance_data_3d_raw, transform_and_interpolate_to_triangle
+
+# Optional 3D imports
+try:
+    import pyqtgraph.opengl as gl
+    from pyqtgraph.opengl import MeshData, GLMeshItem, GLViewWidget
+except Exception:
+    gl = None
+
+try:
+    from OpenGL.GL import glGetDoublev, GL_MODELVIEW_MATRIX, GL_PROJECTION_MATRIX, glGetIntegerv, GL_VIEWPORT
+    from OpenGL.GLU import gluProject
+except Exception:
+    # If PyOpenGL is not installed, picking will be disabled gracefully
+    glGetDoublev = None
+    gluProject = None
 
 class SetharesWorker(QThread):
     finished = pyqtSignal(object)
@@ -112,12 +127,34 @@ class TriadsWindow(QMainWindow):
         self.sethares_model_button.clicked.connect(self.generate_sethares_model)
         self.sidebar_layout.addWidget(self.sethares_model_button)
 
+        # spacer to separate generation buttons from view-mode buttons
+        spacer_before_3d = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.sidebar_layout.addItem(spacer_before_3d)
+
+        # 3D View Button
+        self.view3d_button = QPushButton("3D")
+        self.view3d_button.setStyleSheet(self.checkable_button_style)
+        self.view3d_button.setCheckable(True)
+        self.view3d_button.toggled.connect(self.toggle_3d_view)
+        # disable if pyqtgraph.opengl or PyOpenGL not available
+        self.view3d_button.setEnabled(gl is not None and glGetDoublev is not None and gluProject is not None)
+        if not self.view3d_button.isEnabled():
+            self.view3d_button.setToolTip('3D view requires pyqtgraph.opengl and PyOpenGL')
+        self.sidebar_layout.addWidget(self.view3d_button)
+
         # Topographic Lines Button
         self.topo_button = QPushButton("Lines")
         self.topo_button.setStyleSheet(self.checkable_button_style)
         self.topo_button.setCheckable(True)
         self.topo_button.toggled.connect(self.display_current_image)
+        # ensure mutual exclusivity between Lines and 3D
+        self.topo_button.toggled.connect(lambda checked: (self.view3d_button.setChecked(False) if checked else None))
+        self.view3d_button.toggled.connect(lambda checked: (self.topo_button.setChecked(False) if checked else None))
         self.sidebar_layout.addWidget(self.topo_button)
+
+        # spacer after view-mode buttons
+        spacer_after_3d = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
+        self.sidebar_layout.addItem(spacer_after_3d)
 
         # EDO Button
         self.edo_button = QPushButton("EDO")
@@ -162,6 +199,72 @@ class TriadsWindow(QMainWindow):
 
         # Create isohe_widget
         self.isohe_widget = IsoHEWidget(main_app)
+
+        # Create 3D view (hidden by default). Use a container so we can swap between 2D and 3D
+        self.content_container = QWidget()
+        content_layout = QVBoxLayout(self.content_container)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(0)
+        content_layout.addWidget(self.isohe_widget)
+
+        self.view3d_widget = None
+        if gl is not None:
+            try:
+                self.view3d_widget = GLViewWidget()
+                self.view3d_widget.setBackgroundColor((35, 38, 47))
+                self.view3d_widget.hide()
+                content_layout.addWidget(self.view3d_widget)
+                # store current mesh item so we can remove/replace
+                self._3d_mesh_item = None
+                self._3d_vertex_list = None
+                self._3d_index_map = None
+                # Intercept mouse handlers. Require Shift to rotate/drag the 3D view.
+                # Click without Shift will perform a pick & play action.
+                # Keep originals so we can forward events when Shift is held.
+                self._view3d_original_mouse_press = self.view3d_widget.mousePressEvent
+                self._view3d_original_mouse_move = getattr(self.view3d_widget, 'mouseMoveEvent', None)
+                self._view3d_original_mouse_release = getattr(self.view3d_widget, 'mouseReleaseEvent', None)
+                self._view3d_rotating = False
+
+                def _view3d_mouse_press(ev):
+                    try:
+                        # If Shift is held, allow original behavior (rotate/zoom/pan)
+                        if ev.modifiers() & Qt.ShiftModifier:
+                            self._view3d_rotating = True
+                            if self._view3d_original_mouse_press:
+                                self._view3d_original_mouse_press(ev)
+                        else:
+                            # Treat as a pick for playback (no rotation)
+                            self._on_view3d_mouse_press(ev)
+                    except Exception:
+                        return
+
+                def _view3d_mouse_move(ev):
+                    try:
+                        if self._view3d_rotating:
+                            if self._view3d_original_mouse_move:
+                                self._view3d_original_mouse_move(ev)
+                        else:
+                            # ignore movement to prevent accidental rotation while playing
+                            return
+                    except Exception:
+                        return
+
+                def _view3d_mouse_release(ev):
+                    try:
+                        if self._view3d_rotating:
+                            if self._view3d_original_mouse_release:
+                                self._view3d_original_mouse_release(ev)
+                        self._view3d_rotating = False
+                    except Exception:
+                        self._view3d_rotating = False
+
+                self.view3d_widget.mousePressEvent = _view3d_mouse_press
+                self.view3d_widget.mouseMoveEvent = _view3d_mouse_move
+                self.view3d_widget.mouseReleaseEvent = _view3d_mouse_release
+            except Exception:
+                self.view3d_widget = None
+
         
         # Cent display and pivot buttons
         self.pivot_buttons = {}
@@ -272,7 +375,7 @@ class TriadsWindow(QMainWindow):
         self.expand_button.show()
 
         self.splitter.addWidget(self.sidebar)
-        self.splitter.addWidget(self.isohe_widget)
+        self.splitter.addWidget(self.content_container)
         self.splitter.setSizes([0, self.width()])
         
         self.current_pivot = "1"
@@ -440,18 +543,233 @@ class TriadsWindow(QMainWindow):
 
     def display_current_image(self):
         bank_name = self.bank_order[self.current_bank_index]
-        
-        if self.topo_button.isChecked():
-            if bank_name in self.data_banks:
-                topo_data = self.data_banks[bank_name]
-                self.isohe_widget.set_topo_data(topo_data, self.custom_cm, bank_name)
+        # If 3D view is active, show the GL view; if topo (Lines) is active, show topo contours
+        if hasattr(self, 'view3d_button') and self.view3d_button.isChecked() and self.view3d_widget is not None:
+            # hide 2D widget and show 3D
+            self.isohe_widget.hide()
+            self.view3d_widget.show()
+            # build mesh from data if available
+            if bank_name in self.data_banks and self.data_banks[bank_name] is not None:
+                self._build_3d_mesh(bank_name)
+            else:
+                # no data - clear any existing mesh
+                if hasattr(self, '_3d_mesh_item') and self._3d_mesh_item is not None:
+                    try:
+                        self.view3d_widget.removeItem(self._3d_mesh_item)
+                    except Exception:
+                        pass
+                    self._3d_mesh_item = None
+        else:
+            # ensure 3D view hidden
+            if self.view3d_widget is not None:
+                self.view3d_widget.hide()
+            self.isohe_widget.show()
+
+            if self.topo_button.isChecked():
+                if bank_name in self.data_banks:
+                    topo_data = self.data_banks[bank_name]
+                    self.isohe_widget.set_topo_data(topo_data, self.custom_cm, bank_name)
+                else:
+                    self.isohe_widget.clear_topo_data()
+                    self.isohe_widget.set_triangle_image(None)
             else:
                 self.isohe_widget.clear_topo_data()
-                self.isohe_widget.set_triangle_image(None)
-        else:
-            self.isohe_widget.clear_topo_data()
-            image = self.image_banks.get(bank_name)
-            self.isohe_widget.set_triangle_image(image)
+                image = self.image_banks.get(bank_name)
+                self.isohe_widget.set_triangle_image(image)
+
+    def toggle_3d_view(self, checked):
+        # called when the 3D button toggles
+        if checked:
+            # deselect lines/topo
+            if hasattr(self, 'topo_button'):
+                self.topo_button.setChecked(False)
+        # refresh display
+        self.display_current_image()
+
+    def _on_view3d_mouse_press(self, event):
+        # Map click on GLViewWidget to nearest mesh vertex and play via isohe_widget
+        try:
+            if event is None: return
+            pos = event.pos()
+            # ensure we have vertex list
+            if not hasattr(self, '_3d_vertex_list') or self._3d_vertex_list is None:
+                return
+            # perform picking via gluProject if available
+            if gluProject is None:
+                # PyOpenGL not available; cannot pick reliably
+                return
+
+            viewport = glGetIntegerv(GL_VIEWPORT)
+            model = glGetDoublev(GL_MODELVIEW_MATRIX)
+            proj = glGetDoublev(GL_PROJECTION_MATRIX)
+
+            best_idx = None
+            best_dist2 = float('inf')
+            mx, my = pos.x(), pos.y()
+            for idx, (xw, yw, zw) in enumerate(self._3d_vertex_list):
+                try:
+                    winx, winy, winz = gluProject(xw, yw, zw, model, proj, viewport)
+                except Exception:
+                    continue
+                # OpenGL window Y origin is bottom
+                winy = viewport[3] - winy
+                dx = winx - mx
+                dy = winy - my
+                d2 = dx * dx + dy * dy
+                if d2 < best_dist2:
+                    best_dist2 = d2
+                    best_idx = idx
+
+            # threshold in pixels
+            if best_idx is None or best_dist2 > (16 * 16):
+                return
+
+            # map back to grid indices
+            grid_idx = self._3d_index_map[best_idx]
+            r, c = grid_idx
+            bank_name = self.bank_order[self.current_bank_index]
+            if bank_name not in self.data_banks or self.data_banks[bank_name] is None:
+                return
+            X, Y, Z = self.data_banks[bank_name]
+            xval, yval = float(X[r, c]), float(Y[r, c])
+
+            # map data X/Y back to widget coordinates and send to isohe_widget
+            widget_point = self._map_data_xy_to_widget_point(xval, yval, bank_name)
+            if widget_point is None: return
+            # emulate a click in the isohe widget to update and play
+            self.isohe_widget.dragging = True
+            self.isohe_widget.last_drag_point = widget_point
+            self.isohe_widget.update_ratios_and_sound(widget_point)
+            # Use non-blocking background playback when available to avoid freezing the GUI
+            try:
+                if hasattr(self.isohe_widget, 'play_current_ratios_background'):
+                    self.isohe_widget.play_current_ratios_background()
+                else:
+                    self.isohe_widget.update_sound()
+            except Exception:
+                pass
+        except Exception:
+            return
+
+    def _map_data_xy_to_widget_point(self, xval, yval, model_name):
+        # replicate the mapping used in IsoHEWidget.paint_topo_contours
+        try:
+            X, Y, Z = self.data_banks[model_name]
+            widget_triangle_rect = self.isohe_widget.triangle.boundingRect()
+            x_min_data, x_max_data = np.nanmin(X), np.nanmax(X)
+            y_min_data, y_max_data = np.nanmin(Y), np.nanmax(Y)
+            if x_max_data - x_min_data == 0 or y_max_data - y_min_data == 0:
+                return None
+            x_norm = (xval - x_min_data) / (x_max_data - x_min_data)
+            y_norm = 1 - ((yval - y_min_data) / (y_max_data - y_min_data))
+            x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
+            y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
+            from PyQt5.QtCore import QPointF
+            return QPointF(x_widget, y_widget)
+        except Exception:
+            return None
+
+    def _build_3d_mesh(self, model_name):
+        # Build a GL mesh from X/Y/Z arrays and add to view3d_widget
+        if self.view3d_widget is None or gl is None:
+            return
+        try:
+            X, Y, Z = self.data_banks[model_name]
+            rows, cols = X.shape
+            verts = []
+            index_map = {}
+            idx = 0
+            for r in range(rows):
+                for c in range(cols):
+                    if not np.isnan(Z[r, c]):
+                        verts.append([float(X[r, c]), float(Y[r, c]), float(Z[r, c])])
+                        index_map[(r, c)] = idx
+                        idx += 1
+
+            if len(verts) == 0:
+                return
+
+            # normalize vertices so the mesh fits nicely inside the GL view
+            np_verts = np.array(verts, dtype=float)
+            v_min = np.nanmin(np_verts, axis=0)
+            v_max = np.nanmax(np_verts, axis=0)
+            center = (v_min + v_max) / 2.0
+            extent = v_max - v_min
+            # Compute scale from X/Y extents only so boosting Z later doesn't change XY proportions
+            xy_extent = max(extent[0], extent[1]) if extent.size >= 2 else np.max(extent)
+            if xy_extent == 0 or not np.isfinite(xy_extent):
+                scale = 1.0
+            else:
+                # target a comfortable size in view coordinates
+                target_size = 1.6
+                scale = target_size / xy_extent
+            np_verts_transformed = (np_verts - center) * scale
+
+            # Boost Z-axis to give the mesh more depth so it matches the exported .obj appearance
+            try:
+                # amplify the Z axis significantly (previously 4.0); multiply by 3 as requested
+                z_boost = 12.0
+                if np_verts_transformed.shape[1] > 2:
+                    np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
+            except Exception:
+                pass
+
+            faces = []
+            for r in range(rows - 1):
+                for c in range(cols - 1):
+                    try:
+                        v1 = index_map.get((r, c))
+                        v2 = index_map.get((r + 1, c))
+                        v3 = index_map.get((r + 1, c + 1))
+                        v4 = index_map.get((r, c + 1))
+                        if v1 is not None and v2 is not None and v3 is not None:
+                            faces.append([v1, v2, v3])
+                        if v1 is not None and v3 is not None and v4 is not None:
+                            faces.append([v1, v3, v4])
+                    except Exception:
+                        continue
+
+            md = MeshData(vertexes=np_verts_transformed, faces=np.array(faces))
+            # remove old mesh
+            if hasattr(self, '_3d_mesh_item') and self._3d_mesh_item is not None:
+                try:
+                    self.view3d_widget.removeItem(self._3d_mesh_item)
+                except Exception:
+                    pass
+
+            mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=(0.85, 0.85, 0.85, 1.0))
+            # ensure mesh is centered in the GLView and default to a bird's-eye, zoomed-in view
+            try:
+                # Prefer an orthographic, top-down view so XY proportions are preserved
+                # Try public API first; fall back to setting opts directly if needed.
+                try:
+                    if hasattr(self.view3d_widget, 'setProjection'):
+                        self.view3d_widget.setProjection('ortho')
+                except Exception:
+                    try:
+                        self.view3d_widget.opts['projection'] = 'ortho'
+                    except Exception:
+                        pass
+
+                # Top-down orthographic view (elevation=90) preserves equilateral XY layout
+                self.view3d_widget.setCameraPosition(center=QVector3D(0.0, 0.0, 0.0), distance=2.0, elevation=90, azimuth=0)
+            except Exception:
+                try:
+                    self.view3d_widget.setCameraPosition(center=QVector3D(0.0, 0.0, 0.0), distance=3.0)
+                except Exception:
+                    pass
+            self.view3d_widget.addItem(mesh_item)
+            self._3d_mesh_item = mesh_item
+
+            # store flattened transformed vertex list and index map for picking
+            self._3d_vertex_list = [tuple(v) for v in np_verts_transformed]
+            # build reverse mapping idx -> (r,c)
+            rev_map = {}
+            for (rc, ind) in index_map.items():
+                rev_map[ind] = rc
+            self._3d_index_map = rev_map
+        except Exception:
+            return
 
     def save_triangle_image(self):
         current_model_name = self.bank_order[self.current_bank_index]

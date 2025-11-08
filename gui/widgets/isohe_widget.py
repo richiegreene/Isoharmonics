@@ -2,7 +2,7 @@ import numpy as np
 from PyQt5.QtWidgets import QSlider, QLineEdit
 import pygame
 from PyQt5.QtWidgets import QWidget, QVBoxLayout, QLabel, QHBoxLayout, QSpinBox
-from PyQt5.QtCore import pyqtSignal, QTimer
+from PyQt5.QtCore import pyqtSignal, QTimer, QThread
 from PyQt5.QtCore import Qt, QPointF
 from PyQt5.QtGui import QPainter, QPolygonF, QBrush, QColor, QPen, QFont, QPainterPath
 from PyQt5.QtSvg import QSvgGenerator
@@ -49,6 +49,8 @@ class IsoHEWidget(QWidget):
         self.topo_data = None
         self.topo_colormap = None
         self.topo_model_name = None
+        # playback worker handle
+        self._playback_worker = None
 
     def set_topo_data(self, data, colormap, model_name):
         self.topo_data = data
@@ -429,6 +431,100 @@ class IsoHEWidget(QWidget):
             if old_sound: old_sound.fadeout(int(self.fade_duration * 1000))
         except Exception as e:
             self.sound = None
+
+    # Non-blocking background playback: compute buffer in a QThread, then play on main thread
+    class _PlaybackWorker(QThread):
+        finished = pyqtSignal(object)
+
+        def __init__(self, all_frequencies, all_ratios, duration, roll_off, phase):
+            super().__init__()
+            self.all_frequencies = all_frequencies
+            self.all_ratios = all_ratios
+            self.duration = duration
+            self.roll_off = roll_off
+            self.phase = phase
+
+        def run(self):
+            try:
+                buf = generate_combined_playback_buffer(self.all_frequencies, self.all_ratios, self.duration, self.roll_off, self.phase)
+                self.finished.emit(buf)
+            except Exception:
+                self.finished.emit(None)
+
+    def play_current_ratios_background(self):
+        """Compute the playback buffer in a background thread and play it when ready.
+        This avoids blocking the GUI during heavy buffer generation.
+        """
+        # Prepare frequencies and ratios similar to update_sound
+        try:
+            first_iso_item = self.main_app.table.item(1, 1)
+            base_freq = float(Fraction(first_iso_item.text())) * 261.6 if first_iso_item else 261.6
+        except Exception:
+            base_freq = 261.6
+
+        if len(self.current_ratios) != 3 or any(r <= 0 or not np.isfinite(r) for r in self.current_ratios): return
+        triangle_freqs = [base_freq * r for r in self.current_ratios]
+        if any(f <= 0 or not np.isfinite(f) for f in triangle_freqs): return
+
+        timbre = getattr(self.main_app.visualizer, "current_timbre", None)
+        roll_off = getattr(self.main_app, "roll_off_rate", 0.0)
+        phase = getattr(self.main_app, "phase_factor", 0.0)
+        duration = self.buffer_duration
+
+        all_frequencies, all_ratios = [], []
+        if timbre and 'ratios' in timbre:
+            for base_f, tri_ratio in zip(triangle_freqs, self.current_ratios):
+                for t_ratio in timbre['ratios']:
+                    freq, ratio = base_f * float(t_ratio), float(tri_ratio * t_ratio)
+                    if freq > 0 and np.isfinite(freq):
+                        all_frequencies.append(freq)
+                        all_ratios.append(ratio)
+        else:
+            for freq in triangle_freqs:
+                for cents in [0, 1, -1]:
+                    all_frequencies.append(freq * (2 ** (cents / 1200)))
+            all_ratios = [1] * len(all_frequencies)
+
+        # stop any existing worker
+        try:
+            if self._playback_worker is not None and self._playback_worker.isRunning():
+                self._playback_worker.terminate()
+        except Exception:
+            pass
+
+        # start new worker
+        worker = IsoHEWidget._PlaybackWorker(all_frequencies, all_ratios, duration, roll_off, phase)
+
+        def _on_finished(buf):
+            try:
+                if buf is None or buf.size == 0:
+                    return
+                old_sound = self.sound
+                fade_len = int(self.fade_duration * buf.shape[0])
+                if fade_len > 0:
+                    fade_in, fade_out = np.linspace(0, 1, fade_len), np.linspace(1, 0, fade_len)
+                    buf[:fade_len] = (buf[:fade_len].T * fade_in).T
+                    buf[-fade_len:] = (buf[-fade_len:].T * fade_out).T
+
+                echo_delay = int(0.03 * buf.shape[0])
+                if echo_delay > 0:
+                    echo_buf = np.zeros_like(buf)
+                    echo_buf[echo_delay:] = (buf[:-echo_delay] * self.echo_gain).astype(buf.dtype)
+                    buf = np.clip(buf + echo_buf, -32768, 32767)
+
+                self.sound = pygame.sndarray.make_sound(buf)
+                self.sound.play(loops=-1)
+                if old_sound:
+                    try:
+                        old_sound.fadeout(int(self.fade_duration * 1000))
+                    except Exception:
+                        pass
+            except Exception:
+                self.sound = None
+
+        worker.finished.connect(_on_finished)
+        self._playback_worker = worker
+        worker.start()
 
     def stop_sound(self):
         if self.sound:
