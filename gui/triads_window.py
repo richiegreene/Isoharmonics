@@ -707,8 +707,11 @@ class TriadsWindow(QMainWindow):
 
             # Boost Z-axis to give the mesh more depth so it matches the exported .obj appearance
             try:
-                # amplify the Z axis significantly (previously 4.0); multiply by 3 as requested
+                # base Z boost (applied globally for visible depth)
                 z_boost = 12.0
+                # apply additional 3x boost for the Sethares model only
+                if model_name == 'sethares':
+                    z_boost *= 9.0
                 if np_verts_transformed.shape[1] > 2:
                     np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
             except Exception:
