@@ -13,10 +13,34 @@ from theory.calculations import calculate_edo_step
 from theory.notation.engine import calculate_single_note
 from theory.sethares import get_dissonance_data_3d_raw, transform_and_interpolate_to_triangle
 
+# Helper function for point-in-triangle test
+def is_point_in_triangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y):
+    # Barycentric coordinates method
+    # Using a small epsilon for boundary checks to be inclusive
+    epsilon = 1e-9
+
+    s = v1y * v3x - v1x * v3y + (v3y - v1y) * px + (v1x - v3x) * py
+    t = v1x * v2y - v1y * v2x + (v1y - v2y) * px + (v2x - v1x) * py
+
+    # Denominator for barycentric coordinates
+    A = -v2y * v3x + v1y * (v3x - v2x) + v1x * (v2y - v3y) + v2x * v3y
+    
+    # Handle degenerate triangle or division by zero
+    if abs(A) < epsilon:
+        return False
+    
+    A_inv = 1 / A
+
+    s = s * A_inv
+    t = t * A_inv
+    
+    # Check if point is inside or on the edges (inclusive)
+    return (s >= -epsilon) and (t >= -epsilon) and (1 - s - t >= -epsilon)
+
 # Optional 3D imports
 try:
     import pyqtgraph.opengl as gl
-    from pyqtgraph.opengl import MeshData, GLMeshItem, GLViewWidget
+    from pyqtgraph.opengl import MeshData, GLMeshItem, GLViewWidget, GLScatterPlotItem, GLTextItem
 except Exception:
     gl = None
 
@@ -468,6 +492,10 @@ class TriadsWindow(QMainWindow):
         self.update_equave()
         self.collapse_sidebar()
 
+        self._3d_transform_params = {}
+        self._3d_edo_dots_item = None
+        self._3d_edo_labels_items = [] # Initialize for 3D EDO labels
+
     def save_svg(self):
         if self.view3d_widget and self.view3d_widget.isVisible():
             file_path, _ = QFileDialog.getSaveFileName(self, "Save 3D View as SVG", "", "SVG Files (*.svg)")
@@ -615,8 +643,35 @@ class TriadsWindow(QMainWindow):
         self.labels_button.setEnabled(checked)
         if not checked: self.labels_button.setChecked(False)
 
+        # Handle 3D EDO dots
+        if self.view3d_button.isChecked() and self.view3d_widget is not None:
+            if checked:
+                self._add_edo_dots_to_3d_view()
+            else:
+                if self._3d_edo_dots_item is not None:
+                    try:
+                        self.view3d_widget.removeItem(self._3d_edo_dots_item)
+                    except Exception:
+                        pass
+                    self._3d_edo_dots_item = None
+
     def toggle_edo_labels(self, checked):
         self.isohe_widget.set_show_edo_labels(checked)
+        
+        # Handle 3D EDO labels
+        if self.view3d_button.isChecked() and self.view3d_widget is not None:
+            if checked:
+                # If labels are checked, and dots are visible, re-add dots to trigger label generation
+                if self.edo_button.isChecked():
+                    self._add_edo_dots_to_3d_view()
+            else:
+                # If labels are unchecked, remove all existing labels
+                for item in self._3d_edo_labels_items:
+                    try:
+                        self.view3d_widget.removeItem(item)
+                    except Exception:
+                        pass
+                self._3d_edo_labels_items = []
 
     def toggle_sidebar(self):
         self.expand_sidebar() if self.sidebar.width() == 0 else self.collapse_sidebar()
@@ -673,10 +728,38 @@ class TriadsWindow(QMainWindow):
                     except Exception:
                         pass
                     self._3d_mesh_item = None
+                # Also clear EDO dots if no mesh
+                if self._3d_edo_dots_item is not None:
+                    try:
+                        self.view3d_widget.removeItem(self._3d_edo_dots_item)
+                    except Exception:
+                        pass
+                    self._3d_edo_dots_item = None
+                # Also clear EDO labels if no mesh
+                for item in self._3d_edo_labels_items:
+                    try:
+                        self.view3d_widget.removeItem(item)
+                    except Exception:
+                        pass
+                self._3d_edo_labels_items = []
         else:
             # ensure 3D view hidden
             if self.view3d_widget is not None:
                 self.view3d_widget.hide()
+                # Clear EDO dots when switching to 2D view
+                if self._3d_edo_dots_item is not None:
+                    try:
+                        self.view3d_widget.removeItem(self._3d_edo_dots_item)
+                    except Exception:
+                        pass
+                    self._3d_edo_dots_item = None
+                # Clear EDO labels when switching to 2D view
+                for item in self._3d_edo_labels_items:
+                    try:
+                        self.view3d_widget.removeItem(item)
+                    except Exception:
+                        pass
+                self._3d_edo_labels_items = []
             self.isohe_widget.show()
 
             if self.topo_button.isChecked():
@@ -824,91 +907,98 @@ class TriadsWindow(QMainWindow):
             np_verts_transformed = (np_verts - center) * scale
 
             # Boost Z-axis to give the mesh more depth so it matches the exported .obj appearance
-            try:
-                # base Z boost (applied globally for visible depth)
-                z_boost = 12.0
-                # apply additional 3x boost for the Sethares model only
-                if model_name == 'sethares':
-                    z_boost *= 12.0
-                if np_verts_transformed.shape[1] > 2:
-                    np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
-            except Exception:
-                pass
+            z_boost = 12.0
+            if model_name == 'sethares':
+                z_boost *= 12.0
+            if np_verts_transformed.shape[1] > 2:
+                np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
+
+            # Store transformation parameters
+            self._3d_transform_params = {
+                'center': center,
+                'scale': scale,
+                'z_boost': z_boost,
+                'model_name': model_name,
+                'affine_A': None,
+                'affine_t': None,
+                'data_X': X, # Store original X, Y for Z lookup
+                'data_Y': Y,
+                'data_Z': Z
+            }
 
             # If this is the Harmonic Entropy model, ensure the XY shape is an equilateral triangle
             # by computing an affine transform from the detected corner triangle -> canonical equilateral triangle.
-            try:
-                if model_name == 'harmonic_entropy':
-                    pts = np_verts_transformed[:, :2]
-                    # Monotone chain convex hull implementation
-                    def _convex_hull(points):
-                        pts_sorted = sorted(map(tuple, points.tolist()))
-                        if len(pts_sorted) <= 1:
-                            return pts_sorted
-                        def cross(o, a, b):
-                            return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
-                        lower = []
-                        for p in pts_sorted:
-                            while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
-                                lower.pop()
-                            lower.append(p)
-                        upper = []
-                        for p in reversed(pts_sorted):
-                            while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
-                                upper.pop()
-                            upper.append(p)
-                        hull = lower[:-1] + upper[:-1]
-                        return hull
+            if model_name == 'harmonic_entropy':
+                pts = np_verts_transformed[:, :2]
+                # Monotone chain convex hull implementation
+                def _convex_hull(points):
+                    pts_sorted = sorted(map(tuple, points.tolist()))
+                    if len(pts_sorted) <= 1:
+                        return pts_sorted
+                    def cross(o, a, b):
+                        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+                    lower = []
+                    for p in pts_sorted:
+                        while len(lower) >= 2 and cross(lower[-2], lower[-1], p) <= 0:
+                            lower.pop()
+                        lower.append(p)
+                    upper = []
+                    for p in reversed(pts_sorted):
+                        while len(upper) >= 2 and cross(upper[-2], upper[-1], p) <= 0:
+                            upper.pop()
+                        upper.append(p)
+                    hull = lower[:-1] + upper[:-1]
+                    return hull
 
-                    hull = _convex_hull(pts)
-                    if len(hull) >= 3:
-                        # choose the triangle of hull vertices with maximal area
-                        hull_arr = np.array(hull)
-                        n = len(hull_arr)
-                        best_area = 0.0
-                        best_tri = None
-                        for i in range(n):
-                            for j in range(i+1, n):
-                                for k in range(j+1, n):
-                                    a = hull_arr[i]
-                                    b = hull_arr[j]
-                                    c = hull_arr[k]
-                                    area = abs((b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])) * 0.5
-                                    if area > best_area:
-                                        best_area = area
-                                        best_tri = (a, b, c)
+                hull = _convex_hull(pts)
+                if len(hull) >= 3:
+                    # choose the triangle of hull vertices with maximal area
+                    hull_arr = np.array(hull)
+                    n = len(hull_arr)
+                    best_area = 0.0
+                    best_tri = None
+                    for i in range(n):
+                        for j in range(i+1, n):
+                            for k in range(j+1, n):
+                                a = hull_arr[i]
+                                b = hull_arr[j]
+                                c = hull_arr[k]
+                                area = abs((b[0]-a[0])*(c[1]-a[1]) - (b[1]-a[1])*(c[0]-a[0])) * 0.5
+                                if area > best_area:
+                                    best_area = area
+                                    best_tri = (a, b, c)
 
-                        if best_tri is not None and best_area > 1e-12:
-                            src = np.array(best_tri)
-                            # compute centroid and radius to construct canonical equilateral triangle
-                            src_centroid = src.mean(axis=0)
-                            src_r = np.mean(np.linalg.norm(src - src_centroid, axis=1))
-                            # equilateral triangle vertices (pointing up) relative to centroid
-                            r = src_r
-                            tri_target = np.array([
-                                [0.0, r],
-                                [-np.sqrt(3)/2 * r, -0.5 * r],
-                                [ np.sqrt(3)/2 * r, -0.5 * r]
-                            ])
-                            # translate target to have same centroid as source
-                            tgt_centroid = tri_target.mean(axis=0)
-                            tri_target = tri_target - tgt_centroid + src_centroid
+                    if best_tri is not None and best_area > 1e-12:
+                        src = np.array(best_tri)
+                        # compute centroid and radius to construct canonical equilateral triangle
+                        src_centroid = src.mean(axis=0)
+                        src_r = np.mean(np.linalg.norm(src - src_centroid, axis=1))
+                        # equilateral triangle vertices (pointing up) relative to centroid
+                        r = src_r
+                        tri_target = np.array([
+                            [0.0, r],
+                            [-np.sqrt(3)/2 * r, -0.5 * r],
+                            [ np.sqrt(3)/2 * r, -0.5 * r]
+                        ])
+                        # translate target to have same centroid as source
+                        tgt_centroid = tri_target.mean(axis=0)
+                        tri_target = tri_target - tgt_centroid + src_centroid
 
-                            # Solve affine transform A (2x2) and t s.t. A @ src_i + t = tgt_i
-                            S = np.hstack([src, np.ones((3,1))])  # 3x3
-                            T = tri_target  # 3x2
-                            # Solve for 3x2 matrix M where S @ M = T, M contains [A|t]
-                            try:
-                                M, *_ = np.linalg.lstsq(S, T, rcond=None)
-                                A = M[:2, :].T
-                                t = M[2, :]
-                                # apply transform
-                                transformed_xy = (pts @ A.T) + t
-                                np_verts_transformed[:, :2] = transformed_xy
-                            except Exception:
-                                pass
-            except Exception:
-                pass
+                        # Solve affine transform A (2x2) and t s.t. A @ src_i + t = tgt_i
+                        S = np.hstack([src, np.ones((3,1))])  # 3x3
+                        T = tri_target  # 3x2
+                        # Solve for 3x2 matrix M where S @ M = T, M contains [A|t]
+                        try:
+                            M, *_ = np.linalg.lstsq(S, T, rcond=None)
+                            A = M[:2, :].T
+                            t = M[2, :]
+                            # apply transform
+                            transformed_xy = (pts @ A.T) + t
+                            np_verts_transformed[:, :2] = transformed_xy
+                            self._3d_transform_params['affine_A'] = A
+                            self._3d_transform_params['affine_t'] = t
+                        except Exception:
+                            pass
 
             faces = []
             for r in range(rows - 1):
@@ -1032,8 +1122,142 @@ class TriadsWindow(QMainWindow):
             for (rc, ind) in index_map.items():
                 rev_map[ind] = rc
             self._3d_index_map = rev_map
-        except Exception:
+
+            # Add EDO dots if enabled
+            if self.edo_button.isChecked():
+                self._add_edo_dots_to_3d_view()
+
+        except Exception as e:
+            print(f"Error building 3D mesh: {e}")
             return
+
+    def _add_edo_dots_to_3d_view(self):
+        if self.view3d_widget is None or gl is None or not self._3d_transform_params:
+            return
+
+        # Clear existing EDO dots
+        if self._3d_edo_dots_item is not None:
+            try:
+                self.view3d_widget.removeItem(self._3d_edo_dots_item)
+            except Exception:
+                pass
+            self._3d_edo_dots_item = None
+
+        try:
+            edo = int(self.main_app.edo_entry.text())
+            if edo <= 0: return
+        except (ValueError, AttributeError):
+            return
+
+        equave_ratio = self.isohe_widget.equave
+        equave_cents = 1200 * np.log2(float(equave_ratio))
+        step_in_cents = 1200 / edo
+
+        # Get transformation parameters
+        center = self._3d_transform_params['center']
+        scale = self._3d_transform_params['scale']
+        z_boost = self._3d_transform_params['z_boost']
+        model_name = self._3d_transform_params['model_name']
+        affine_A = self._3d_transform_params['affine_A']
+        affine_t = self._3d_transform_params['affine_t']
+        data_X = self._3d_transform_params['data_X']
+        data_Y = self._3d_transform_params['data_Y']
+        data_Z = self._3d_transform_params['data_Z']
+
+        # Get image dimensions from the Z data array
+        height, width = data_Z.shape
+        max_cents_x = 1200 * np.log2(float(equave_ratio))
+        max_cents_y = 1200 * np.log2(float(equave_ratio)) * np.sqrt(3) / 2 # This is from triangle_generator.py
+
+        edo_points_3d = []
+
+        num_steps = int(equave_cents / step_in_cents)
+
+        for i in range(num_steps + 1):
+            for j in range(num_steps + 1 - i):
+                c1_edo = i * step_in_cents
+                c2_edo = j * step_in_cents
+
+                # Use the same formula as generate_triangle_image for cx, cy
+                cx_data = c1_edo + (c2_edo / 2)
+                cy_data = c2_edo * np.sqrt(3) / 2
+
+                # Define the conceptual triangle vertices in (cx_data, cy_data) space
+                # These correspond to the corners of the equilateral triangle formed by cx_data, cy_data
+                v1_cx = 0.0
+                v1_cy = 0.0
+
+                v2_cx = max_cents_x
+                v2_cy = 0.0
+
+                v3_cx = max_cents_x / 2
+                v3_cy = max_cents_y
+
+                # Check if the EDO dot's (cx_data, cy_data) falls within this conceptual triangle
+                # This replaces the previous 'if c1_edo + c2_edo > equave_cents: continue'
+                # and is more robust for the equilateral triangle shape.
+                if not is_point_in_triangle(cx_data, cy_data, v1_cx, v1_cy, v2_cx, v2_cy, v3_cx, v3_cy):
+                    continue
+
+                # Convert cents coordinates to pixel coordinates (similar to triangle_generator.py)
+                # Adjust scaling to map to width/height instead of width-1/height-1
+                cx_pixel = (cx_data / max_cents_x) * width
+                cy_pixel = (cy_data / max_cents_y) * height
+
+                # Find corresponding Z value from the mesh data
+                # Need to handle out-of-bounds and NaN values
+                r_idx, c_idx = int(round(cy_pixel)), int(round(cx_pixel))
+
+                # Clamp indices to ensure they are within bounds
+                r_idx = max(0, min(r_idx, height - 1))
+                c_idx = max(0, min(c_idx, width - 1))
+
+                # Only add the point if data_Z is not NaN at this location
+                if not np.isnan(data_Z[r_idx, c_idx]):
+                    z_val = data_Z[r_idx, c_idx]
+                    
+                    # Create a temporary vertex for transformation
+                    temp_vert = np.array([cx_pixel, cy_pixel, z_val], dtype=float)
+
+                    # Apply the same normalization and scaling as the mesh
+                    transformed_vert = (temp_vert - center) * scale
+
+                    # Apply Z-boost
+                    transformed_vert[2] = transformed_vert[2] * z_boost
+
+                    # Apply Harmonic Entropy Affine Transform if applicable
+                    if model_name == 'harmonic_entropy' and affine_A is not None and affine_t is not None:
+                        transformed_xy = (transformed_vert[:2] @ affine_A.T) + affine_t
+                        transformed_vert[:2] = transformed_xy
+
+                    # Adjust Z-offset to 0.0
+                    transformed_vert[2] += 0.0
+
+                    edo_points_3d.append(transformed_vert)
+
+                    # Generate label if labels button is checked
+                    if self.labels_button.isChecked():
+                        # The 2D labels are: label = f"[0, {i}, {i+j}]"
+                        # Let's use that for now.
+                        label_text = f"[0, {i}, {i+j}]"
+
+                        # Position the label slightly above the dot
+                        label_pos = transformed_vert.copy()
+                        label_pos[2] += 0.05 # Slightly higher than the dot
+
+                        text_item = gl.GLTextItem(pos=label_pos, text=label_text, color=(1.0, 1.0, 1.0, 1.0))
+                        self._3d_edo_labels_items.append(text_item)
+
+        if edo_points_3d:
+            edo_points_3d = np.array(edo_points_3d)
+            # Use a small size and grey color for the dots
+            self._3d_edo_dots_item = gl.GLScatterPlotItem(pos=edo_points_3d, size=0.025, color=(0.5, 0.5, 0.5, 1.0), pxMode=False)
+            self.view3d_widget.addItem(self._3d_edo_dots_item)
+        
+        # Add labels if labels button is checked
+        if self.labels_button.isChecked():
+            for item in self._3d_edo_labels_items:
+                self.view3d_widget.addItem(item)
 
     def save_triangle_image(self):
         if self.view3d_widget and self.view3d_widget.isVisible():
