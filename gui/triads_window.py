@@ -845,7 +845,7 @@ class TriadsWindow(QMainWindow):
                 z_boost = 12.0
                 # apply additional 3x boost for the Sethares model only
                 if model_name == 'sethares':
-                    z_boost *= 3.0
+                    z_boost *= 12.0
                 if np_verts_transformed.shape[1] > 2:
                     np_verts_transformed[:, 2] = np_verts_transformed[:, 2] * z_boost
             except Exception:
