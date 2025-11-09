@@ -1,5 +1,5 @@
 from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup, QInputDialog
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor, QVector3D
 from fractions import Fraction
 import numpy as np
@@ -193,9 +193,12 @@ class TriadsWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.sidebar_width = 200
 
-        # Colormaps
-        self.colors = ["#23262F", "#1E1861", "#1A0EBE", "#0437f2", "#7895fc", "#A7C6ED", "#D0E1F9", "#F0F4FF", "#FFFFFF"]
-        self.custom_cm = LinearSegmentedColormap.from_list("color_gradient", self.colors)
+        # Colormaps: use a solid EDO blue for both topo and 3D meshes (user requested)
+        # Keep a two-stop colormap made of the same blue so matplotlib APIs that
+        # expect a colormap still work but render as a solid blue.
+        self._edo_blue_hex = "#0437f2"
+        self.colors = [self._edo_blue_hex, self._edo_blue_hex]
+        self.custom_cm = LinearSegmentedColormap.from_list("solid_edo_blue", self.colors)
 
         # Caches
         self.image_banks = {'blank': None, 'harmonic_entropy': None, 'sethares': None}
@@ -957,26 +960,61 @@ class TriadsWindow(QMainWindow):
                     mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color)
             else:
                 mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color)
-            # ensure mesh is centered in the GLView and default to a bird's-eye, zoomed-in view
+            # ensure mesh is centered in the GLView and default to a bird's-eye framing
+            # First prefer an orthographic projection when available
             try:
-                # Prefer an orthographic, top-down view so XY proportions are preserved
-                # Try public API first; fall back to setting opts directly if needed.
-                try:
-                    if hasattr(self.view3d_widget, 'setProjection'):
+                if hasattr(self.view3d_widget, 'setProjection'):
+                    try:
                         self.view3d_widget.setProjection('ortho')
+                    except Exception:
+                        # some pyqtgraph versions may raise; fall back to opts
+                        try:
+                            self.view3d_widget.opts['projection'] = 'ortho'
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+            # Birdseye parameters (adjustable)
+            birdseye_elevation = 60
+            birdseye_azimuth = 0
+            birdseye_distance = 2.2
+
+            def _apply_camera():
+                # Try positional API, then keyword API, then write opts directly.
+                try:
+                    self.view3d_widget.setCameraPosition(QVector3D(0.0, 0.0, 0.0), birdseye_distance, birdseye_elevation, birdseye_azimuth)
+                    return
                 except Exception:
+                    pass
+                try:
+                    self.view3d_widget.setCameraPosition(center=QVector3D(0.0, 0.0, 0.0), distance=birdseye_distance, elevation=birdseye_elevation, azimuth=birdseye_azimuth)
+                    return
+                except Exception:
+                    pass
+                try:
+                    self.view3d_widget.opts['center'] = QVector3D(0.0, 0.0, 0.0)
+                    self.view3d_widget.opts['distance'] = birdseye_distance
+                    self.view3d_widget.opts['elevation'] = birdseye_elevation
+                    self.view3d_widget.opts['azimuth'] = birdseye_azimuth
                     try:
                         self.view3d_widget.opts['projection'] = 'ortho'
                     except Exception:
                         pass
-
-                # Top-down orthographic view (elevation=90) preserves equilateral XY layout
-                self.view3d_widget.setCameraPosition(center=QVector3D(0.0, 0.0, 0.0), distance=2.0, elevation=90, azimuth=0)
-            except Exception:
-                try:
-                    self.view3d_widget.setCameraPosition(center=QVector3D(0.0, 0.0, 0.0), distance=3.0)
+                    try:
+                        self.view3d_widget.update()
+                    except Exception:
+                        pass
                 except Exception:
                     pass
+
+            # apply immediately and schedule a short delayed re-apply to handle timing issues
+            try:
+                _apply_camera()
+                QTimer.singleShot(50, _apply_camera)
+            except Exception:
+                pass
+
             self.view3d_widget.addItem(mesh_item)
             self._3d_mesh_item = mesh_item
 
