@@ -5,6 +5,7 @@ from fractions import Fraction
 import numpy as np
 import io
 import matplotlib.pyplot as plt
+from scipy.ndimage import gaussian_filter
 from matplotlib.colors import LinearSegmentedColormap
 from gui.widgets.isohe_widget import IsoHEWidget
 from theory.triangle_generator import generate_triangle_image
@@ -68,92 +69,41 @@ if 'GLMeshItem' in globals() and glMaterialfv is not None:
             def __init__(self, *args, specular=(1.0, 1.0, 1.0), shininess=80.0, **kwargs):
                 super().__init__(*args, **kwargs)
                 self._specular = tuple(specular)
-                self._shininess = float(shininess)
+                # Clamp shininess to the valid OpenGL range [0, 128]
+                self._shininess = max(0.0, min(float(shininess), 128.0))
+
+            def setup_lighting(self):
+                if glEnable is not None and GL_LIGHTING is not None:
+                    glEnable(GL_LIGHTING)
+                if glEnable is not None and GL_LIGHT0 is not None:
+                    glEnable(GL_LIGHT0)
+                if glEnable is not None and GL_NORMALIZE is not None:
+                    glEnable(GL_NORMALIZE)
+
+                if glLightfv is not None and GL_LIGHT0 is not None and GL_POSITION is not None:
+                    glLightfv(GL_LIGHT0, GL_POSITION, (5.0, 5.0, 5.0, 1.0))
+                if glLightfv is not None and GL_LIGHT0 is not None and GL_DIFFUSE is not None:
+                    glLightfv(GL_LIGHT0, GL_DIFFUSE, (1.0, 1.0, 1.0, 1.0))
+                if glLightfv is not None and GL_LIGHT0 is not None and GL_SPECULAR is not None:
+                    glLightfv(GL_LIGHT0, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
+
+                if glEnable is not None and GL_COLOR_MATERIAL is not None:
+                    glEnable(GL_COLOR_MATERIAL)
+                    glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
+
+                if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SPECULAR is not None:
+                    glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (*self._specular, 1.0))
+                if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SHININESS is not None:
+                    glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, self._shininess)
 
             def draw(self):
-                # set material specular and shininess for this mesh before drawing
-                pushed = False
-                try:
-                    # Push lighting attributes if available so changes are scoped
-                    if glPushAttrib is not None and GL_LIGHTING_BIT is not None:
-                        try:
-                            glPushAttrib(GL_LIGHTING_BIT)
-                            pushed = True
-                        except Exception:
-                            pushed = False
+                self.setup_lighting()
+                res = super().draw()
+                return res
 
-                    # Enable lighting and a single light for better specular highlights
-                    if glEnable is not None and GL_LIGHTING is not None:
-                        try:
-                            glEnable(GL_LIGHTING)
-                        except Exception:
-                            pass
-                    if glEnable is not None and GL_LIGHT0 is not None:
-                        try:
-                            glEnable(GL_LIGHT0)
-                        except Exception:
-                            pass
-
-                    # Set a simple positional white light
-                    if glLightfv is not None and GL_LIGHT0 is not None and GL_POSITION is not None:
-                        try:
-                            glLightfv(GL_LIGHT0, GL_POSITION, (1.0, 1.0, 1.0, 0.0))
-                        except Exception:
-                            pass
-                    if glLightfv is not None and GL_LIGHT0 is not None and GL_DIFFUSE is not None:
-                        try:
-                            glLightfv(GL_LIGHT0, GL_DIFFUSE, (1.0, 1.0, 1.0, 1.0))
-                        except Exception:
-                            pass
-                    if glLightfv is not None and GL_LIGHT0 is not None and GL_SPECULAR is not None:
-                        try:
-                            glLightfv(GL_LIGHT0, GL_SPECULAR, (1.0, 1.0, 1.0, 1.0))
-                        except Exception:
-                            pass
-
-                    if glEnable is not None and GL_COLOR_MATERIAL is not None:
-                        try:
-                            glEnable(GL_COLOR_MATERIAL)
-                            try:
-                                glColorMaterial(GL_FRONT_AND_BACK, GL_AMBIENT_AND_DIFFUSE)
-                            except Exception:
-                                pass
-                        except Exception:
-                            pass
-
-                    if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SPECULAR is not None:
-                        try:
-                            glMaterialfv(GL_FRONT_AND_BACK, GL_SPECULAR, (*self._specular, 1.0))
-                        except Exception:
-                            pass
-                    if glMaterialfv is not None and GL_FRONT_AND_BACK is not None and GL_SHININESS is not None:
-                        try:
-                            # GL_SHININESS expects a single float
-                            glMaterialfv(GL_FRONT_AND_BACK, GL_SHININESS, self._shininess)
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
-                # call base draw method
-                try:
-                    res = super().draw()
-                except Exception:
-                    try:
-                        res = super().paint()
-                    except Exception:
-                        res = None
-
-                # restore previous lighting attributes
-                try:
-                    if pushed and glPopAttrib is not None:
-                        try:
-                            glPopAttrib()
-                        except Exception:
-                            pass
-                except Exception:
-                    pass
-
+            def paint(self):
+                self.setup_lighting()
+                res = super().paint()
                 return res
 
         _ShinyMeshClass = ShinyMesh
@@ -839,6 +789,10 @@ class TriadsWindow(QMainWindow):
             return
         try:
             X, Y, Z = self.data_banks[model_name]
+
+            if model_name in ['harmonic_entropy', 'sethares']:
+                Z = gaussian_filter(Z, sigma=1.5)
+
             rows, cols = X.shape
             verts = []
             index_map = {}
@@ -1008,7 +962,7 @@ class TriadsWindow(QMainWindow):
             # Create a shiny mesh if our ShinyMesh subclass is available; otherwise fall back to GLMeshItem
             if _ShinyMeshClass is not None:
                 try:
-                    mesh_item = _ShinyMeshClass(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color, specular=(1.0, 1.0, 1.0), shininess=120.0)
+                                        mesh_item = _ShinyMeshClass(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color, specular=(1.0, 1.0, 1.0), shininess=128.0)
                 except Exception:
                     mesh_item = GLMeshItem(meshdata=md, smooth=True, drawEdges=False, shader='shaded', color=blue_color)
             else:
