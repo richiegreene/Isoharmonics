@@ -193,12 +193,10 @@ class TriadsWindow(QMainWindow):
         self.setFocusPolicy(Qt.StrongFocus)
         self.sidebar_width = 200
 
-        # Colormaps: use a solid EDO blue for both topo and 3D meshes (user requested)
-        # Keep a two-stop colormap made of the same blue so matplotlib APIs that
-        # expect a colormap still work but render as a solid blue.
-        self._edo_blue_hex = "#0437f2"
-        self.colors = [self._edo_blue_hex, self._edo_blue_hex]
-        self.custom_cm = LinearSegmentedColormap.from_list("solid_edo_blue", self.colors)
+        # Colormaps: use the standard topo gradient used elsewhere so 2D and 3D
+        # share the same color mapping. This matches the original UI gradient.
+        self.colors = ["#23262F", "#1E1861", "#1A0EBE", "#0437f2", "#7895fc", "#A7C6ED", "#D0E1F9", "#F0F4FF", "#FFFFFF"]
+        self.custom_cm = LinearSegmentedColormap.from_list("color_gradient", self.colors)
 
         # Caches
         self.image_banks = {'blank': None, 'harmonic_entropy': None, 'sethares': None}
@@ -944,6 +942,31 @@ class TriadsWindow(QMainWindow):
                         continue
 
             md = MeshData(vertexes=np_verts_transformed, faces=np.array(faces))
+            # Attempt to compute per-vertex colors from the Z axis using the
+            # same colormap used by the 2D topo views so the 3D mesh shares
+            # the same gradient coloring.
+            try:
+                vert_colors = None
+                if np_verts_transformed.shape[1] > 2:
+                    z_vals = np_verts_transformed[:, 2]
+                    z_min = float(np.nanmin(z_vals))
+                    z_max = float(np.nanmax(z_vals))
+                    if np.isfinite(z_min) and np.isfinite(z_max):
+                        if (z_max - z_min) == 0:
+                            norm = np.zeros_like(z_vals)
+                        else:
+                            norm = (z_vals - z_min) / (z_max - z_min)
+                        rgba = self.custom_cm(norm)
+                        vert_colors = np.array(rgba, dtype=float)
+                        # Try attaching colors to the MeshData (preferred)
+                        try:
+                            md.setVertexColors(vert_colors)
+                        except Exception:
+                            # Some MeshData versions may not support setVertexColors;
+                            # we'll rely on GLMeshItem reading colors from meshdata when present
+                            pass
+            except Exception:
+                pass
             # remove old mesh
             if hasattr(self, '_3d_mesh_item') and self._3d_mesh_item is not None:
                 try:
