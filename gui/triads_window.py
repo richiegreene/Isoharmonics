@@ -519,6 +519,36 @@ class TriadsWindow(QMainWindow):
         self.collapse_sidebar()
 
     def save_svg(self):
+        if self.view3d_widget and self.view3d_widget.isVisible():
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save 3D View as SVG", "", "SVG Files (*.svg)")
+            if not file_path:
+                return
+
+            image = QImage(self.view3d_widget.size(), QImage.Format_ARGB32)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            self.view3d_widget.render(painter)
+            painter.end()
+
+            import base64
+            from PyQt5.QtCore import QBuffer, QIODevice
+            
+            buffer = QBuffer()
+            buffer.open(QIODevice.WriteOnly)
+            image.save(buffer, "PNG")
+            base64_data = base64.b64encode(buffer.data().data()).decode('utf-8')
+            
+            width = image.width()
+            height = image.height()
+
+            svg_content = f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+  <image x="0" y="0" width="{width}" height="{height}" xlink:href="data:image/png;base64,{base64_data}" />
+</svg>
+"""
+            with open(file_path, 'w') as f:
+                f.write(svg_content)
+            return
+
         file_path, _ = QFileDialog.getSaveFileName(self, "Save SVG", "", "SVG Files (*.svg)")
         if file_path:
             topo_data = None
@@ -1052,6 +1082,20 @@ class TriadsWindow(QMainWindow):
             return
 
     def save_triangle_image(self):
+        if self.view3d_widget and self.view3d_widget.isVisible():
+            file_path, _ = QFileDialog.getSaveFileName(self, "Save 3D View", "", "PNG Files (*.png)")
+            if not file_path:
+                return
+            
+            image = QImage(self.view3d_widget.size(), QImage.Format_ARGB32)
+            image.fill(Qt.transparent)
+            painter = QPainter(image)
+            self.view3d_widget.render(painter)
+            painter.end()
+            
+            image.save(file_path)
+            return
+
         current_model_name = self.bank_order[self.current_bank_index]
         image_to_save = None
 
