@@ -12,6 +12,7 @@ from theory.triangle_generator import generate_triangle_image
 from theory.calculations import calculate_edo_step
 from theory.notation.engine import calculate_single_note
 from theory.sethares import get_dissonance_data_3d_raw, transform_and_interpolate_to_triangle
+from utils.formatters import to_subscript
 
 # Helper function for point-in-triangle test
 def is_point_in_triangle(px, py, v1x, v1y, v2x, v2y, v3x, v3y):
@@ -324,7 +325,7 @@ class TriadsWindow(QMainWindow):
                 content_layout.addWidget(self.view3d_widget)
                 # store current mesh item so we can remove/replace
                 self._3d_mesh_item = None
-                self._3d_vertex_list = None
+                self._3d_picking_vertex_list = None
                 self._3d_index_map = None
                 # Intercept mouse handlers. Require Shift to rotate/drag the 3D view.
                 # Click without Shift will perform a pick & play action.
@@ -518,8 +519,8 @@ class TriadsWindow(QMainWindow):
             width = image.width()
             height = image.height()
 
-            svg_content = f"""<svg width="{width}" height="{height}" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
-  <image x="0" y="0" width="{width}" height="{height}" xlink:href="data:image/png;base64,{base64_data}" />
+            svg_content = f"""<svg width=\"{width}\" height=\"{height}\" xmlns=\"http://www.w3.org/2000/svg\" xmlns:xlink=\"http://www.w3.org/1999/xlink\">
+  <image x=\"0\" y=\"0\" width=\"{width}\" height=\"{height}\" xlink:href=\"data:image/png;base64,{base64_data}\" />
 </svg>
 """
             with open(file_path, 'w') as f:
@@ -782,44 +783,96 @@ class TriadsWindow(QMainWindow):
         # refresh display
         self.display_current_image()
 
+    def _update_sound_from_cents(self, c1, c2):
+        # This is a simplified version of isohe_widget.update_ratios_and_sound
+        # It takes cents values directly
+        try:
+            p_pitch = self.isohe_widget.pivot_pitch
+            pivot_voice = self.isohe_widget.pivot_voice
+
+            if pivot_voice == "upper":
+                pitch1, pitch2, pitch3 = p_pitch - c1 - c2, p_pitch - c2, p_pitch
+            elif pivot_voice == "middle":
+                pitch1, pitch2, pitch3 = p_pitch - c1, p_pitch, p_pitch + c2
+            else: # lower
+                pitch1, pitch2, pitch3 = p_pitch, p_pitch + c1, p_pitch + c1 + c2
+
+            def cents_to_ratio(c): return 2 ** (c / 1200)
+            new_ratios = [cents_to_ratio(p) for p in [pitch1, pitch2, pitch3]]
+            
+            # Update labels
+            self.cent_labels["3"].setText(f"{int(round(pitch3))}")
+            self.cent_labels["2"].setText(f"{int(round(pitch2))}")
+            self.cent_labels["1"].setText(f"{int(round(pitch1))}")
+
+            edo = int(self.main_app.edo_entry.text())
+            for i, pitch in enumerate([pitch1, pitch2, pitch3]):
+                step_str, error = calculate_edo_step(pitch, edo)
+                step = int(step_str.replace("-", "-"))
+                note_name = calculate_single_note(step, edo)
+                octave = 4 + (pitch // 1200)
+                note_name_with_octave = note_name + to_subscript(int(octave))
+                error_str = f"{round(-error):+}".replace("-", "-")
+                if error_str in ["+0", "-0"]: error_str = ""
+                self.note_labels[str(i + 1)].setText(f"{note_name_with_octave} {error_str}")
+
+            self.isohe_widget.current_ratios = new_ratios
+            self.isohe_widget.update_ratios_label()
+
+            # Play sound (copied from isohe_widget)
+            if not all(np.isfinite(new_ratios)) or any(r <= 0 for r in new_ratios): return
+            if self.isohe_widget.last_played_ratios is None or any(abs(a - b) > 1e-6 for a, b in zip(new_ratios, self.isohe_widget.last_played_ratios)):
+                # Use the background playback method
+                if hasattr(self.isohe_widget, 'play_current_ratios_background'):
+                    self.isohe_widget.play_current_ratios_background()
+                else:
+                    self.isohe_widget.update_sound() # Fallback
+                self.isohe_widget.last_played_ratios = list(new_ratios)
+        except Exception as e:
+            print(f"Error in _update_sound_from_cents: {e}")
+
     def _pick_and_play_3d(self, pos):
         # Map click on GLViewWidget to nearest mesh vertex and play via isohe_widget
         try:
             if pos is None: return
-            # ensure we have vertex list
-            if not hasattr(self, '_3d_vertex_list') or self._3d_vertex_list is None:
+            if not hasattr(self, '_3d_picking_vertex_list') or self._3d_picking_vertex_list is None:
                 return
-            # perform picking via gluProject if available
             if gluProject is None:
-                # PyOpenGL not available; cannot pick reliably
                 return
 
-            viewport = glGetIntegerv(GL_VIEWPORT)
-            model = glGetDoublev(GL_MODELVIEW_MATRIX)
-            proj = glGetDoublev(GL_PROJECTION_MATRIX)
+            # Use pyqtgraph's methods to get matrices and viewport
+            viewport = self.view3d_widget.getViewport()
+            proj = self.view3d_widget.projectionMatrix()
+            model = self.view3d_widget.viewMatrix()
+
+            proj_np = np.array(proj.data(), dtype=np.float64).reshape(4, 4)
+            model_np = np.array(model.data(), dtype=np.float64).reshape(4, 4)
 
             best_idx = None
             best_dist2 = float('inf')
             mx, my = pos.x(), pos.y()
-            for idx, (xw, yw, zw) in enumerate(self._3d_vertex_list):
+
+            # Optimization: check only a subset of vertices to avoid freezing
+            stride = 100
+            
+            for i in range(0, len(self._3d_picking_vertex_list), stride):
+                xw, yw, zw = self._3d_picking_vertex_list[i]
                 try:
-                    winx, winy, winz = gluProject(xw, yw, zw, model, proj, viewport)
+                    winx, winy, winz = gluProject(xw, yw, zw, model_np, proj_np, viewport)
                 except Exception:
                     continue
-                # OpenGL window Y origin is bottom
+                
                 winy = viewport[3] - winy
                 dx = winx - mx
                 dy = winy - my
                 d2 = dx * dx + dy * dy
                 if d2 < best_dist2:
                     best_dist2 = d2
-                    best_idx = idx
+                    best_idx = i # Map back to original index
 
-            # threshold in pixels
-            if best_idx is None or best_dist2 > (32 * 32): # Increased threshold
+            if best_idx is None or best_dist2 > (32 * 32):
                 return
 
-            # map back to grid indices
             grid_idx = self._3d_index_map[best_idx]
             r, c = grid_idx
             bank_name = self.bank_order[self.current_bank_index]
@@ -827,22 +880,14 @@ class TriadsWindow(QMainWindow):
                 return
             X, Y, Z = self.data_banks[bank_name]
             xval, yval = float(X[r, c]), float(Y[r, c])
+            
+            c2 = yval * 2 / np.sqrt(3)
+            c1 = xval - (c2 / 2)
 
-            # map data X/Y back to widget coordinates and send to isohe_widget
-            widget_point = self._map_data_xy_to_widget_point(xval, yval, bank_name)
-            if widget_point is None: return
-            # emulate a click in the isohe widget to update and play
-            self.isohe_widget.last_drag_point = widget_point
-            self.isohe_widget.update_ratios_and_sound(widget_point)
-            # Use non-blocking background playback when available to avoid freezing the GUI
-            try:
-                if hasattr(self.isohe_widget, 'play_current_ratios_background'):
-                    self.isohe_widget.play_current_ratios_background()
-                else:
-                    self.isohe_widget.update_sound()
-            except Exception:
-                pass
-        except Exception:
+            self._update_sound_from_cents(c1, c2)
+
+        except Exception as e:
+            print(f"Error in _pick_and_play_3d: {e}")
             return
 
     def _on_view3d_mouse_press(self, event):
@@ -856,24 +901,6 @@ class TriadsWindow(QMainWindow):
     def _on_view3d_mouse_release(self, event):
         self.isohe_widget.dragging = False
         self.isohe_widget.stop_sound()
-
-    def _map_data_xy_to_widget_point(self, xval, yval, model_name):
-        # replicate the mapping used in IsoHEWidget.paint_topo_contours
-        try:
-            X, Y, Z = self.data_banks[model_name]
-            widget_triangle_rect = self.isohe_widget.triangle.boundingRect()
-            x_min_data, x_max_data = np.nanmin(X), np.nanmax(X)
-            y_min_data, y_max_data = np.nanmin(Y), np.nanmax(Y)
-            if x_max_data - x_min_data == 0 or y_max_data - y_min_data == 0:
-                return None
-            x_norm = (xval - x_min_data) / (x_max_data - x_min_data)
-            y_norm = 1 - ((yval - y_min_data) / (y_max_data - y_min_data))
-            x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
-            y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
-            from PyQt5.QtCore import QPointF
-            return QPointF(x_widget, y_widget)
-        except Exception:
-            return None
 
     def _build_3d_mesh(self, model_name):
         # Build a GL mesh from X/Y/Z arrays and add to view3d_widget
@@ -899,8 +926,10 @@ class TriadsWindow(QMainWindow):
             if len(verts) == 0:
                 return
 
-            # normalize vertices so the mesh fits nicely inside the GL view
+            self._3d_picking_vertex_list = list(verts) # Store original vertices for picking
             np_verts = np.array(verts, dtype=float)
+            
+            # normalize vertices so the mesh fits nicely inside the GL view
             v_min = np.nanmin(np_verts, axis=0)
             v_max = np.nanmax(np_verts, axis=0)
             center = (v_min + v_max) / 2.0
@@ -1124,8 +1153,6 @@ class TriadsWindow(QMainWindow):
             self.view3d_widget.addItem(mesh_item)
             self._3d_mesh_item = mesh_item
 
-            # store flattened transformed vertex list and index map for picking
-            self._3d_vertex_list = [tuple(v) for v in np_verts_transformed]
             # build reverse mapping idx -> (r,c)
             rev_map = {}
             for (rc, ind) in index_map.items():
@@ -1186,6 +1213,9 @@ class TriadsWindow(QMainWindow):
             for j in range(num_steps + 1 - i):
                 c1_edo = i * step_in_cents
                 c2_edo = j * step_in_cents
+
+                if c1_edo + c2_edo > equave_cents + 1e-9:
+                    continue
 
                 # Use the same formula as generate_triangle_image for cx, cy
                 cx_data = c1_edo + (c2_edo / 2)
