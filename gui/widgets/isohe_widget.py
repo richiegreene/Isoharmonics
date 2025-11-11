@@ -163,19 +163,6 @@ class IsoHEWidget(QWidget):
             if self.show_dots:
                 self.draw_dots(painter)
 
-            font = QFont("Arial Nova", 12)
-            painter.setFont(font)
-            painter.setPen(Qt.white)
-
-            equave_ratio = self.equave
-            top_corner_ratio = [1, 1, equave_ratio]
-            bottom_right_ratio = [1, equave_ratio, equave_ratio]
-
-            painter.drawText(self.v1 + QPointF(-15, -15), format_series_segment(top_corner_ratio))
-            bottom_y = self.v2.y()
-            painter.drawText(QPointF(self.v2.x() - 30, bottom_y), "1:1:1")
-            painter.drawText(QPointF(self.v3.x() + 5, bottom_y), format_series_segment(bottom_right_ratio))
-
     def save_svg(self, file_path, topo_data=None, colormap=None, model_name=None):
         if not file_path:
             return
@@ -269,16 +256,16 @@ class IsoHEWidget(QWidget):
         painter.setBrush(QColor('#A0A0A0'))
         painter.setPen(QPen(QColor('#0437f2'), 1))
 
-        triads = generate_ji_triads(limit)
+        triads = generate_ji_triads(limit, self.equave)
 
         for (cx, cy), label in triads:
-            if cx + cy > equave_cents: continue
+            if cx + cy > equave_cents + 1e-9: continue
 
             w1 = cy / equave_cents
             w3 = cx / equave_cents
             w2 = 1.0 - w1 - w3
 
-            if not (0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1): continue
+            if not (-1e-9 <= w1 <= 1 + 1e-9 and -1e-9 <= w2 <= 1 + 1e-9 and -1e-9 <= w3 <= 1 + 1e-9): continue
 
             x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
             y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()

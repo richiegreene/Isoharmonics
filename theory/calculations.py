@@ -70,27 +70,32 @@ def get_odd_limit(ratio):
     except (ValueError, ZeroDivisionError):
         return 1
 
-def generate_ji_triads(odd_limit):
+def generate_ji_triads(odd_limit, equave=Fraction(2,1)):
     if odd_limit < 1:
         return []
 
-    # 1. Generate all valid intervals in [1, 2]
-    valid_intervals = set()
+    # 1. Generate all valid intervals
+    valid_intervals = set([Fraction(1,1)])
     odds = [i for i in range(1, odd_limit + 1) if i % 2 != 0]
     for n in odds:
         for d in odds:
+            if n == d: continue
             ratio = Fraction(n, d)
-            while ratio > 2:
-                ratio /= 2
-            while ratio < 1:
-                ratio *= 2
-            if get_odd_limit(ratio) <= odd_limit:
-                 valid_intervals.add(ratio)
-    
-    if get_odd_limit(1) <= odd_limit:
-        valid_intervals.add(Fraction(1,1))
-    if get_odd_limit(2) <= odd_limit:
-        valid_intervals.add(Fraction(2,1))
+            
+            # generate octave variations up to equave
+            temp_r = ratio
+            while temp_r <= equave:
+                if temp_r >= 1:
+                    valid_intervals.add(temp_r)
+                temp_r *= 2
+            
+            temp_r = ratio / 2
+            while temp_r >= 1:
+                valid_intervals.add(temp_r)
+                temp_r /= 2
+
+    if get_odd_limit(equave) <= odd_limit:
+        valid_intervals.add(equave)
 
     sorted_intervals = sorted(list(valid_intervals))
 
@@ -102,18 +107,18 @@ def generate_ji_triads(odd_limit):
         r1 = sorted_intervals[i]
         for j in range(i, len(sorted_intervals)):
             r2 = sorted_intervals[j]
-            # Triad notes are 1, r1, r2 (as intervals from the root)
-            # We need to check the third interval r2/r1
             
             r3 = r2 / r1
             if get_odd_limit(r3) <= odd_limit:
-                # This is a valid triad with intervals from root R1=r1, R2=r2
-                # The intervals between adjacent notes are cx_ratio = r1, cy_ratio = r2/r1
                 cx_ratio = r1
                 cy_ratio = r3
 
+                if cx_ratio < 1 or cy_ratio < 1: continue
+
                 cx = 1200 * math.log2(cx_ratio)
                 cy = 1200 * math.log2(cy_ratio)
+
+                if cx + cy > 1200 * math.log2(equave) + 1e-9: continue
 
                 # Generate label 1 : r1 : r2
                 common_denom = r1.denominator * r2.denominator
