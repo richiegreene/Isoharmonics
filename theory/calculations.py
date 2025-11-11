@@ -87,7 +87,6 @@ def generate_ji_triads(odd_limit):
             if get_odd_limit(ratio) <= odd_limit:
                  valid_intervals.add(ratio)
     
-    # Ensure 1 and 2 are included if within limit
     if get_odd_limit(1) <= odd_limit:
         valid_intervals.add(Fraction(1,1))
     if get_odd_limit(2) <= odd_limit:
@@ -99,13 +98,13 @@ def generate_ji_triads(odd_limit):
     triad_labels = set()
 
     # 2. Form triads from intervals
-    for r1 in sorted_intervals:
-        for r2 in sorted_intervals:
+    for i in range(len(sorted_intervals)):
+        r1 = sorted_intervals[i]
+        for j in range(i, len(sorted_intervals)):
+            r2 = sorted_intervals[j]
             # Triad notes are 1, r1, r2 (as intervals from the root)
             # We need to check the third interval r2/r1
-            if r1 >= r2:
-                continue
-
+            
             r3 = r2 / r1
             if get_odd_limit(r3) <= odd_limit:
                 # This is a valid triad with intervals from root R1=r1, R2=r2
