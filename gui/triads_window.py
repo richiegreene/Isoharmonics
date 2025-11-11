@@ -336,13 +336,11 @@ class TriadsWindow(QMainWindow):
 
                 def _view3d_mouse_press(ev):
                     try:
-                        # If Shift is held, allow original behavior (rotate/zoom/pan)
                         if ev.modifiers() & Qt.ShiftModifier:
                             self._view3d_rotating = True
                             if self._view3d_original_mouse_press:
                                 self._view3d_original_mouse_press(ev)
                         else:
-                            # Treat as a pick for playback (no rotation)
                             self._on_view3d_mouse_press(ev)
                     except Exception:
                         return
@@ -353,8 +351,7 @@ class TriadsWindow(QMainWindow):
                             if self._view3d_original_mouse_move:
                                 self._view3d_original_mouse_move(ev)
                         else:
-                            # ignore movement to prevent accidental rotation while playing
-                            return
+                            self._on_view3d_mouse_move(ev)
                     except Exception:
                         return
 
@@ -363,6 +360,8 @@ class TriadsWindow(QMainWindow):
                         if self._view3d_rotating:
                             if self._view3d_original_mouse_release:
                                 self._view3d_original_mouse_release(ev)
+                        else:
+                            self._on_view3d_mouse_release(ev)
                         self._view3d_rotating = False
                     except Exception:
                         self._view3d_rotating = False
@@ -783,11 +782,10 @@ class TriadsWindow(QMainWindow):
         # refresh display
         self.display_current_image()
 
-    def _on_view3d_mouse_press(self, event):
+    def _pick_and_play_3d(self, pos):
         # Map click on GLViewWidget to nearest mesh vertex and play via isohe_widget
         try:
-            if event is None: return
-            pos = event.pos()
+            if pos is None: return
             # ensure we have vertex list
             if not hasattr(self, '_3d_vertex_list') or self._3d_vertex_list is None:
                 return
@@ -818,7 +816,7 @@ class TriadsWindow(QMainWindow):
                     best_idx = idx
 
             # threshold in pixels
-            if best_idx is None or best_dist2 > (16 * 16):
+            if best_idx is None or best_dist2 > (32 * 32): # Increased threshold
                 return
 
             # map back to grid indices
@@ -834,7 +832,6 @@ class TriadsWindow(QMainWindow):
             widget_point = self._map_data_xy_to_widget_point(xval, yval, bank_name)
             if widget_point is None: return
             # emulate a click in the isohe widget to update and play
-            self.isohe_widget.dragging = True
             self.isohe_widget.last_drag_point = widget_point
             self.isohe_widget.update_ratios_and_sound(widget_point)
             # Use non-blocking background playback when available to avoid freezing the GUI
@@ -847,6 +844,18 @@ class TriadsWindow(QMainWindow):
                 pass
         except Exception:
             return
+
+    def _on_view3d_mouse_press(self, event):
+        self.isohe_widget.dragging = True
+        self._pick_and_play_3d(event.pos())
+
+    def _on_view3d_mouse_move(self, event):
+        if self.isohe_widget.dragging:
+            self._pick_and_play_3d(event.pos())
+
+    def _on_view3d_mouse_release(self, event):
+        self.isohe_widget.dragging = False
+        self.isohe_widget.stop_sound()
 
     def _map_data_xy_to_widget_point(self, xval, yval, model_name):
         # replicate the mapping used in IsoHEWidget.paint_topo_contours
@@ -1171,7 +1180,7 @@ class TriadsWindow(QMainWindow):
 
         edo_points_3d = []
 
-        num_steps = int(equave_cents / step_in_cents)
+        num_steps = int(round(equave_cents / step_in_cents))
 
         for i in range(num_steps + 1):
             for j in range(num_steps + 1 - i):
@@ -1182,31 +1191,10 @@ class TriadsWindow(QMainWindow):
                 cx_data = c1_edo + (c2_edo / 2)
                 cy_data = c2_edo * np.sqrt(3) / 2
 
-                # Define the conceptual triangle vertices in (cx_data, cy_data) space
-                # These correspond to the corners of the equilateral triangle formed by cx_data, cy_data
-                v1_cx = 0.0
-                v1_cy = 0.0
-
-                v2_cx = max_cents_x
-                v2_cy = 0.0
-
-                v3_cx = max_cents_x / 2
-                v3_cy = max_cents_y
-
-                # Check if the EDO dot's (cx_data, cy_data) falls within this conceptual triangle
-                # This replaces the previous 'if c1_edo + c2_edo > equave_cents: continue'
-                # and is more robust for the equilateral triangle shape.
-                if not is_point_in_triangle(cx_data, cy_data, v1_cx, v1_cy, v2_cx, v2_cy, v3_cx, v3_cy):
-                    continue
-
                 # Convert cents coordinates to pixel coordinates (similar to triangle_generator.py)
                 # Adjust scaling to map to width/height instead of width-1/height-1
-                cx_pixel = (cx_data / max_cents_x) * width
-                cy_pixel = (cy_data / max_cents_y) * height
-
-                # Find corresponding Z value from the mesh data
-                # Need to handle out-of-bounds and NaN values
-                r_idx, c_idx = int(round(cy_pixel)), int(round(cx_pixel))
+                c_idx = int(round((cx_data / max_cents_x) * (width - 1)))
+                r_idx = int(round((cy_data / max_cents_y) * (height - 1)))
 
                 # Clamp indices to ensure they are within bounds
                 r_idx = max(0, min(r_idx, height - 1))
@@ -1217,7 +1205,7 @@ class TriadsWindow(QMainWindow):
                     z_val = data_Z[r_idx, c_idx]
                     
                     # Create a temporary vertex for transformation
-                    temp_vert = np.array([cx_pixel, cy_pixel, z_val], dtype=float)
+                    temp_vert = np.array([data_X[r_idx, c_idx], data_Y[r_idx, c_idx], z_val], dtype=float)
 
                     # Apply the same normalization and scaling as the mesh
                     transformed_vert = (temp_vert - center) * scale
