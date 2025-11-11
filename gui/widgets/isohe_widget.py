@@ -8,7 +8,7 @@ from PyQt5.QtGui import QPainter, QPolygonF, QBrush, QColor, QPen, QFont, QPaint
 from PyQt5.QtSvg import QSvgGenerator
 from fractions import Fraction
 from audio.generators import generate_combined_playback_buffer
-from theory.calculations import format_series_segment, calculate_edo_step
+from theory.calculations import format_series_segment, calculate_edo_step, generate_ji_triads
 from theory.notation.engine import calculate_single_note
 from utils.formatters import to_subscript
 import matplotlib.pyplot as plt
@@ -43,14 +43,24 @@ class IsoHEWidget(QWidget):
         self.last_drag_point = None
         self.sound = None
         self.triangle_image = None
-        self.show_edo_dots = False
-        self.show_edo_labels = False
+        self.show_dots = False
+        self.show_labels = False
+        self.dots_mode = 'JI'
+        self.odd_limit = 15
 
         self.topo_data = None
         self.topo_colormap = None
         self.topo_model_name = None
         # playback worker handle
         self._playback_worker = None
+
+    def set_dots_mode(self, mode):
+        self.dots_mode = mode
+        self.update()
+
+    def set_odd_limit(self, limit):
+        self.odd_limit = limit
+        self.update()
 
     def set_topo_data(self, data, colormap, model_name):
         self.topo_data = data
@@ -64,12 +74,12 @@ class IsoHEWidget(QWidget):
         self.topo_model_name = None
         self.update()
 
-    def set_show_edo_dots(self, show):
-        self.show_edo_dots = show
+    def set_show_dots(self, show):
+        self.show_dots = show
         self.update()
 
-    def set_show_edo_labels(self, show):
-        self.show_edo_labels = show
+    def set_show_labels(self, show):
+        self.show_labels = show
         self.update()
 
     def set_pivot_voice(self, voice):
@@ -150,8 +160,8 @@ class IsoHEWidget(QWidget):
 
         if not for_svg:
             painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
-            if self.show_edo_dots:
-                self.draw_edo_dots(painter)
+            if self.show_dots:
+                self.draw_dots(painter)
 
             font = QFont("Arial Nova", 12)
             painter.setFont(font)
@@ -241,6 +251,47 @@ class IsoHEWidget(QWidget):
         painter.setClipping(False)
         plt.close(fig)
 
+    def draw_dots(self, painter):
+        if self.dots_mode == 'JI':
+            self.draw_ji_dots(painter)
+        else:
+            self.draw_edo_dots(painter)
+
+    def draw_ji_dots(self, painter):
+        try:
+            limit = self.odd_limit
+            if limit <= 0: return
+        except (ValueError, AttributeError):
+            return
+
+        equave_cents = 1200 * np.log2(float(self.equave))
+        
+        painter.setBrush(QColor('#A0A0A0'))
+        painter.setPen(QPen(QColor('#0437f2'), 1))
+
+        triads = generate_ji_triads(limit)
+
+        for (cx, cy), label in triads:
+            if cx + cy > equave_cents: continue
+
+            w1 = cy / equave_cents
+            w3 = cx / equave_cents
+            w2 = 1.0 - w1 - w3
+
+            if not (0 <= w1 <= 1 and 0 <= w2 <= 1 and 0 <= w3 <= 1): continue
+
+            x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
+            y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
+
+            painter.drawEllipse(QPointF(x, y), 4, 4)
+
+            if self.show_labels:
+                font = QFont("Arial Nova", 10)
+                painter.setFont(font)
+                painter.setPen(Qt.white)
+                text_width = painter.fontMetrics().width(label)
+                painter.drawText(QPointF(x - text_width / 2, y - 8), label)
+
     def draw_edo_dots(self, painter):
         try:
             edo = int(self.main_app.edo_entry.text())
@@ -274,7 +325,7 @@ class IsoHEWidget(QWidget):
 
                 painter.drawEllipse(QPointF(x, y), 4, 4)
 
-                if self.show_edo_labels:
+                if self.show_labels:
                     label = f"[0, {i}, {i+j}]"
                     font = QFont("Arial Nova", 10)
                     painter.setFont(font)

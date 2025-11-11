@@ -265,20 +265,39 @@ class TriadsWindow(QMainWindow):
         spacer_after_3d = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.sidebar_layout.addItem(spacer_after_3d)
 
-        # EDO Button
-        self.edo_button = QPushButton("EDO")
-        self.edo_button.setStyleSheet(self.checkable_button_style)
-        self.edo_button.setCheckable(True)
-        self.edo_button.toggled.connect(self.toggle_edo_dots)
-        self.sidebar_layout.addWidget(self.edo_button)
+        # Dots Button
+        self.dots_button = QPushButton("Dots")
+        self.dots_button.setStyleSheet(self.checkable_button_style)
+        self.dots_button.setCheckable(True)
+        self.dots_button.toggled.connect(self.toggle_dots)
+        
+        self.mode_button = QPushButton("JI")
+        self.mode_button.setStyleSheet(self.checkable_button_style)
+        self.mode_button.setCheckable(True)
+        self.mode_button.setChecked(False) # JI is default
+        self.mode_button.toggled.connect(self.toggle_dots_mode)
+
+        dots_layout = QHBoxLayout()
+        dots_layout.addWidget(self.dots_button)
+        dots_layout.addWidget(self.mode_button)
+        self.sidebar_layout.addLayout(dots_layout)
 
         # Labels Button
         self.labels_button = QPushButton("Labels")
         self.labels_button.setStyleSheet(self.checkable_button_style)
         self.labels_button.setCheckable(True)
-        self.labels_button.toggled.connect(self.toggle_edo_labels)
+        self.labels_button.toggled.connect(self.toggle_dots_labels)
         self.labels_button.setEnabled(False)
         self.sidebar_layout.addWidget(self.labels_button)
+
+        # Odd-Limit input
+        self.odd_limit_label = QLabel("Odd-Limit")
+        self.odd_limit_label.setStyleSheet("color: white;")
+        self.sidebar_layout.addWidget(self.odd_limit_label)
+        self.odd_limit_entry = QLineEdit("9")
+        self.odd_limit_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
+        self.odd_limit_entry.textChanged.connect(self.update_odd_limit)
+        self.sidebar_layout.addWidget(self.odd_limit_entry)
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -308,6 +327,8 @@ class TriadsWindow(QMainWindow):
 
         # Create isohe_widget
         self.isohe_widget = IsoHEWidget(main_app)
+        self.isohe_widget.set_dots_mode('JI')
+        self.isohe_widget.set_odd_limit(9)
 
         # Create 3D view (hidden by default). Use a container so we can swap between 2D and 3D
         self.content_container = QWidget()
@@ -495,6 +516,63 @@ class TriadsWindow(QMainWindow):
         self._3d_transform_params = {}
         self._3d_edo_dots_item = None
         self._3d_edo_labels_items = [] # Initialize for 3D EDO labels
+        self._debug_marker = None
+
+    def toggle_dots(self, checked):
+        self.isohe_widget.set_show_dots(checked)
+        self.labels_button.setEnabled(checked)
+        if not checked: self.labels_button.setChecked(False)
+
+        # Handle 3D EDO dots
+        if self.view3d_button.isChecked() and self.view3d_widget is not None:
+            if checked:
+                self._add_edo_dots_to_3d_view()
+            else:
+                if self._3d_edo_dots_item is not None:
+                    try:
+                        self.view3d_widget.removeItem(self._3d_edo_dots_item)
+                    except Exception:
+                        pass
+                    self._3d_edo_dots_item = None
+
+    def toggle_dots_labels(self, checked):
+        self.isohe_widget.set_show_labels(checked)
+        
+        # Handle 3D EDO labels
+        if self.view3d_button.isChecked() and self.view3d_widget is not None:
+            if checked:
+                # If labels are checked, and dots are visible, re-add dots to trigger label generation
+                if self.dots_button.isChecked():
+                    self._add_edo_dots_to_3d_view()
+            else:
+                # If labels are unchecked, remove all existing labels
+                for item in self._3d_edo_labels_items:
+                    try:
+                        self.view3d_widget.removeItem(item)
+                    except Exception:
+                        pass
+                self._3d_edo_labels_items = []
+
+    def toggle_dots_mode(self, checked):
+        if checked:
+            self.mode_button.setText("EDO")
+            self.odd_limit_label.hide()
+            self.odd_limit_entry.hide()
+            self.isohe_widget.set_dots_mode('EDO')
+        else:
+            self.mode_button.setText("JI")
+            self.odd_limit_label.show()
+            self.odd_limit_entry.show()
+            self.isohe_widget.set_dots_mode('JI')
+        self.isohe_widget.update()
+
+    def update_odd_limit(self, text):
+        try:
+            limit = int(text)
+            if limit > 0:
+                self.isohe_widget.set_odd_limit(limit)
+        except ValueError:
+            pass
 
     def save_svg(self):
         if self.view3d_widget and self.view3d_widget.isVisible():
@@ -543,7 +621,7 @@ class TriadsWindow(QMainWindow):
         X, Y, Z = self.data_banks[model_name]
         
         dpi = 150
-        levels = 15
+        levels = 30
         z_min, z_max = np.nanmin(Z), np.nanmax(Z)
         if np.isnan(z_min) or np.isnan(z_max): return None
         contour_levels = np.linspace(z_min, z_max, levels)
@@ -637,41 +715,6 @@ class TriadsWindow(QMainWindow):
             self.current_pivot = pivot_name
             self.pivot_buttons[pivot_name].setChecked(True)
             self.isohe_widget.set_pivot_voice({"3": "upper", "2": "middle", "1": "lower"}[pivot_name])
-
-    def toggle_edo_dots(self, checked):
-        self.isohe_widget.set_show_edo_dots(checked)
-        self.labels_button.setEnabled(checked)
-        if not checked: self.labels_button.setChecked(False)
-
-        # Handle 3D EDO dots
-        if self.view3d_button.isChecked() and self.view3d_widget is not None:
-            if checked:
-                self._add_edo_dots_to_3d_view()
-            else:
-                if self._3d_edo_dots_item is not None:
-                    try:
-                        self.view3d_widget.removeItem(self._3d_edo_dots_item)
-                    except Exception:
-                        pass
-                    self._3d_edo_dots_item = None
-
-    def toggle_edo_labels(self, checked):
-        self.isohe_widget.set_show_edo_labels(checked)
-        
-        # Handle 3D EDO labels
-        if self.view3d_button.isChecked() and self.view3d_widget is not None:
-            if checked:
-                # If labels are checked, and dots are visible, re-add dots to trigger label generation
-                if self.edo_button.isChecked():
-                    self._add_edo_dots_to_3d_view()
-            else:
-                # If labels are unchecked, remove all existing labels
-                for item in self._3d_edo_labels_items:
-                    try:
-                        self.view3d_widget.removeItem(item)
-                    except Exception:
-                        pass
-                self._3d_edo_labels_items = []
 
     def toggle_sidebar(self):
         self.expand_sidebar() if self.sidebar.width() == 0 else self.collapse_sidebar()
@@ -872,6 +915,39 @@ class TriadsWindow(QMainWindow):
 
             if best_idx is None or best_dist2 > (32 * 32):
                 return
+
+            # --- Start of new debug code ---
+            # Remove previous marker
+            if self._debug_marker is not None:
+                try:
+                    self.view3d_widget.removeItem(self._debug_marker)
+                except Exception:
+                    pass # Ignore errors if item is already gone
+
+            # Get the original 3D coordinate of the picked vertex
+            picked_vertex_orig = self._3d_picking_vertex_list[best_idx]
+
+            # Create a new marker
+            # We need to transform this original vertex just like the main mesh is transformed
+            # so it shows up in the right place.
+            center = self._3d_transform_params['center']
+            scale = self._3d_transform_params['scale']
+            z_boost = self._3d_transform_params['z_boost']
+            model_name = self._3d_transform_params['model_name']
+            affine_A = self._3d_transform_params['affine_A']
+            affine_t = self._3d_transform_params['affine_t']
+
+            marker_vert = np.array(picked_vertex_orig, dtype=float)
+            transformed_marker_vert = (marker_vert - center) * scale
+            if transformed_marker_vert.shape[0] > 2:
+                transformed_marker_vert[2] *= z_boost
+            if model_name == 'harmonic_entropy' and affine_A is not None and affine_t is not None:
+                transformed_xy = (transformed_marker_vert[:2] @ affine_A.T) + affine_t
+                transformed_marker_vert[:2] = transformed_xy
+
+            self._debug_marker = gl.GLScatterPlotItem(pos=np.array([transformed_marker_vert]), size=15, color=(1, 0, 0, 1), pxMode=False)
+            self.view3d_widget.addItem(self._debug_marker)
+            # --- End of new debug code ---
 
             grid_idx = self._3d_index_map[best_idx]
             r, c = grid_idx

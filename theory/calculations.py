@@ -54,3 +54,82 @@ def format_series_segment(series):
 def simplify_ratio(ratio):
     frac = Fraction(ratio).limit_denominator()
     return f"{frac.numerator}/{frac.denominator}"
+
+def get_odd_limit(ratio):
+    """Calculates the odd limit of a given ratio."""
+    try:
+        ratio = Fraction(ratio).limit_denominator(10000)
+        n, d = ratio.numerator, ratio.denominator
+        
+        while n > 0 and n % 2 == 0:
+            n //= 2
+        while d > 0 and d % 2 == 0:
+            d //= 2
+            
+        return max(n, d)
+    except (ValueError, ZeroDivisionError):
+        return 1
+
+def generate_ji_triads(odd_limit):
+    if odd_limit < 1:
+        return []
+
+    # 1. Generate all valid intervals in [1, 2]
+    valid_intervals = set()
+    odds = [i for i in range(1, odd_limit + 1) if i % 2 != 0]
+    for n in odds:
+        for d in odds:
+            ratio = Fraction(n, d)
+            while ratio > 2:
+                ratio /= 2
+            while ratio < 1:
+                ratio *= 2
+            if get_odd_limit(ratio) <= odd_limit:
+                 valid_intervals.add(ratio)
+    
+    # Ensure 1 and 2 are included if within limit
+    if get_odd_limit(1) <= odd_limit:
+        valid_intervals.add(Fraction(1,1))
+    if get_odd_limit(2) <= odd_limit:
+        valid_intervals.add(Fraction(2,1))
+
+    sorted_intervals = sorted(list(valid_intervals))
+
+    triads = []
+    triad_labels = set()
+
+    # 2. Form triads from intervals
+    for r1 in sorted_intervals:
+        for r2 in sorted_intervals:
+            # Triad notes are 1, r1, r2 (as intervals from the root)
+            # We need to check the third interval r2/r1
+            if r1 >= r2:
+                continue
+
+            r3 = r2 / r1
+            if get_odd_limit(r3) <= odd_limit:
+                # This is a valid triad with intervals from root R1=r1, R2=r2
+                # The intervals between adjacent notes are cx_ratio = r1, cy_ratio = r2/r1
+                cx_ratio = r1
+                cy_ratio = r3
+
+                cx = 1200 * math.log2(cx_ratio)
+                cy = 1200 * math.log2(cy_ratio)
+
+                # Generate label 1 : r1 : r2
+                common_denom = r1.denominator * r2.denominator
+                a = common_denom
+                b = r1.numerator * r2.denominator
+                c = r2.numerator * r1.denominator
+                
+                common_divisor = gcd(gcd(a,b),c)
+                sa, sb, sc = a//common_divisor, b//common_divisor, c//common_divisor
+                
+                sorted_triad = sorted([sa, sb, sc])
+                label = f"{sorted_triad[0]}:{sorted_triad[1]}:{sorted_triad[2]}"
+
+                if label not in triad_labels:
+                    triads.append(((cx, cy), label))
+                    triad_labels.add(label)
+
+    return triads
