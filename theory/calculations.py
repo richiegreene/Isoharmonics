@@ -70,8 +70,16 @@ def get_odd_limit(ratio):
     except (ValueError, ZeroDivisionError):
         return 1
 
-def generate_ji_triads(odd_limit, equave=Fraction(2,1)):
-    if odd_limit < 1:
+def get_integer_limit(ratio):
+    """Calculates the integer limit of a given ratio."""
+    try:
+        ratio = Fraction(ratio).limit_denominator(10000)
+        return max(ratio.numerator, ratio.denominator)
+    except (ValueError, ZeroDivisionError):
+        return 1
+
+def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # Updated signature
+    if limit_value < 1:
         return []
 
     # 1. Generate all valid intervals
@@ -84,20 +92,28 @@ def generate_ji_triads(odd_limit, equave=Fraction(2,1)):
     # Let's try a simple multiple of odd_limit for the range of n and d.
     # A safe upper bound for n and d would be odd_limit * equave.numerator (if equave is a Fraction)
     # or a sufficiently large constant. Let's use odd_limit * 3 as a starting point.
-    max_val_for_n_d = odd_limit * 3 # Heuristic: odd_limit * 3 should be sufficient
+    max_val_for_n_d = limit_value * 3 # Heuristic: limit_value * 3 should be sufficient
 
     for n_val in range(1, max_val_for_n_d + 1):
         for d_val in range(1, max_val_for_n_d + 1):
             if n_val == 0 or d_val == 0: continue # Avoid division by zero
             ratio = Fraction(n_val, d_val)
             
-            # Only add if the odd limit of the ratio is within the specified odd_limit
-            if get_odd_limit(ratio) <= odd_limit:
-                valid_intervals.add(ratio)
+            # Only add if the ratio's limit is within the specified limit_value
+            if limit_mode == "odd":
+                if get_odd_limit(ratio) <= limit_value:
+                    valid_intervals.add(ratio)
+            elif limit_mode == "integer":
+                if get_integer_limit(ratio) <= limit_value:
+                    valid_intervals.add(ratio)
 
-    # Ensure equave itself is included
-    if get_odd_limit(equave) <= odd_limit:
-        valid_intervals.add(equave)
+    # Ensure equave itself is included based on the current limit mode
+    if limit_mode == "odd":
+        if get_odd_limit(equave) <= limit_value:
+            valid_intervals.add(equave)
+    elif limit_mode == "integer":
+        if get_integer_limit(equave) <= limit_value:
+            valid_intervals.add(equave)
 
     sorted_intervals = sorted(list(valid_intervals))
 
@@ -111,31 +127,46 @@ def generate_ji_triads(odd_limit, equave=Fraction(2,1)):
             r2 = sorted_intervals[j]
             
             r3 = r2 / r1
-            if get_odd_limit(r3) <= odd_limit:
-                cx_ratio = r1
-                cy_ratio = r3
+            
+            cx_ratio = None
+            cy_ratio = None
 
-                if cx_ratio < 1 or cy_ratio < 1: continue
+            # Filter r3 based on the current limit mode
+            if limit_mode == "odd":
+                if get_odd_limit(r3) <= limit_value:
+                    cx_ratio = r1
+                    cy_ratio = r3
+            elif limit_mode == "integer":
+                if get_integer_limit(r3) <= limit_value:
+                    cx_ratio = r1
+                    cy_ratio = r3
+            
+            if cx_ratio is None or cy_ratio is None: continue # Skip if r3 filter failed
 
-                cx = 1200 * math.log2(cx_ratio)
-                cy = 1200 * math.log2(cy_ratio)
+            if cx_ratio < 1 or cy_ratio < 1: continue
 
-                if cx + cy > 1200 * math.log2(equave) + 1e-9: continue
+            cx = 1200 * math.log2(cx_ratio)
+            cy = 1200 * math.log2(cy_ratio)
 
-                # Generate label 1 : r1 : r2
-                common_denom = r1.denominator * r2.denominator
-                a = common_denom
-                b = r1.numerator * r2.denominator
-                c = r2.numerator * r1.denominator
-                
-                common_divisor = gcd(gcd(a,b),c)
-                sa, sb, sc = a//common_divisor, b//common_divisor, c//common_divisor
-                
-                sorted_triad = sorted([sa, sb, sc])
-                label = f"{sorted_triad[0]}:{sorted_triad[1]}:{sorted_triad[2]}"
+            if cx + cy > 1200 * math.log2(equave) + 1e-9: continue
 
-                if label not in triad_labels:
-                    triads.append(((cx, cy), label))
-                    triad_labels.add(label)
+            # Generate label 1 : r1 : r2
+            common_denom = r1.denominator * r2.denominator
+            a = common_denom
+            b = r1.numerator * r2.denominator
+            c = r2.numerator * r1.denominator
+            
+            common_divisor = gcd(gcd(a,b),c)
+            sa, sb, sc = a//common_divisor, b//common_divisor, c//common_divisor
+            
+            sorted_triad = sorted([sa, sb, sc])
+            label = f"{sorted_triad[0]}:{sorted_triad[1]}:{sorted_triad[2]}"
+
+            if label not in triad_labels:
+                triads.append(((cx, cy), label))
+                triad_labels.add(label)
+                # DEBUG PRINT
+                if label in ["1:1:2", "1:2:2", "1:2:3"]:
+                    print(f"DEBUG: Generated triad: {label}, cx={cx}, cy={cy}, equave={equave}, equave_cents={1200 * math.log2(equave)}")
 
     return triads

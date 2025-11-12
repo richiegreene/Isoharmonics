@@ -1,4 +1,4 @@
-from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup, QInputDialog
+from PyQt5.QtWidgets import QWidget, QMainWindow, QSplitter, QVBoxLayout, QPushButton, QLabel, QLineEdit, QHBoxLayout, QToolButton, QSpacerItem, QSizePolicy, QFileDialog, QButtonGroup, QInputDialog, QComboBox
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFontDatabase, QFont, QImage, QPainter, QPainterPath, QPolygonF, QBrush, QColor, QVector3D
 from fractions import Fraction
@@ -288,14 +288,37 @@ class TriadsWindow(QMainWindow):
         dots_layout.addWidget(self.mode_button)
         self.sidebar_layout.addLayout(dots_layout)
 
-        # Odd-Limit input
-        self.odd_limit_label = QLabel("Odd-Limit")
-        self.odd_limit_label.setStyleSheet("color: white;")
-        self.sidebar_layout.addWidget(self.odd_limit_label)
-        self.odd_limit_entry = QLineEdit("15")
-        self.odd_limit_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
-        self.odd_limit_entry.textChanged.connect(self.update_odd_limit)
-        self.sidebar_layout.addWidget(self.odd_limit_entry)
+        # Limit Type Dropdown
+        self.limit_type_dropdown = QComboBox()
+        self.limit_type_dropdown.addItems(["Odd-Limit", "Integer-Limit"])
+        self.limit_type_dropdown.setCurrentText("Odd-Limit") # Default to Odd-Limit
+        self.limit_type_dropdown.setStyleSheet("""
+            QComboBox {
+                background-color: #2C2F3B; color: white;
+                border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;
+            }
+            QComboBox::drop-down {
+                border: 0px; /* No border for the arrow part */
+            }
+            QComboBox::down-arrow {
+                image: url(./path/to/your/down_arrow.png); /* Replace with actual path to an arrow icon */
+                width: 10px;
+                height: 10px;
+            }
+            QComboBox QAbstractItemView {
+                background-color: #2C2F3B;
+                color: white;
+                selection-background-color: #0437f2;
+            }
+        """)
+        self.sidebar_layout.addWidget(self.limit_type_dropdown)
+        self.limit_type_dropdown.currentIndexChanged.connect(self.update_limit_mode)
+
+        # Limit Value Entry
+        self.limit_value_entry = QLineEdit("15") # Renamed from odd_limit_entry
+        self.limit_value_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
+        self.limit_value_entry.textChanged.connect(self.update_limit_value) # New method name
+        self.sidebar_layout.addWidget(self.limit_value_entry)
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -326,7 +349,8 @@ class TriadsWindow(QMainWindow):
         # Create isohe_widget
         self.isohe_widget = IsoHEWidget(main_app)
         self.isohe_widget.set_dots_mode('JI')
-        self.isohe_widget.set_odd_limit(15)
+        self.isohe_widget.set_limit_mode("odd") # Set initial mode
+        self.isohe_widget.set_limit_value(15) # Set initial value
 
         # Create 3D view (hidden by default). Use a container so we can swap between 2D and 3D
         self.content_container = QWidget()
@@ -554,13 +578,13 @@ class TriadsWindow(QMainWindow):
     def toggle_dots_mode(self, checked):
         if checked:
             self.mode_button.setText("EDO")
-            self.odd_limit_label.hide()
-            self.odd_limit_entry.hide()
+            # self.odd_limit_label.hide() # REMOVED
+            # self.odd_limit_entry.hide() # REMOVED
             self.isohe_widget.set_dots_mode('EDO')
         else:
             self.mode_button.setText("JI")
-            self.odd_limit_label.show()
-            self.odd_limit_entry.show()
+            # self.odd_limit_label.show() # REMOVED
+            # self.odd_limit_entry.show() # REMOVED
             self.isohe_widget.set_dots_mode('JI')
         self.isohe_widget.update()
 
@@ -740,6 +764,19 @@ class TriadsWindow(QMainWindow):
                 ratio1, ratio2 = Fraction(item1.text()), Fraction(item2.text())
                 if ratio1 != 0: self.isohe_widget.set_equave(ratio2 / ratio1)
         except (ValueError, ZeroDivisionError): pass
+
+    def update_limit_mode(self, index):
+        mode = self.limit_type_dropdown.itemText(index).replace("-Limit", "").lower()
+        self.isohe_widget.set_limit_mode(mode)
+        self.isohe_widget.update() # Force redraw
+
+    def update_limit_value(self, text):
+        try:
+            limit = int(text)
+            if limit > 0:
+                self.isohe_widget.set_limit_value(limit) # New method in isohe_widget
+        except ValueError:
+            pass
 
     def closeEvent(self, event):
         self.isohe_widget.stop_sound()
