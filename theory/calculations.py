@@ -76,24 +76,26 @@ def generate_ji_triads(odd_limit, equave=Fraction(2,1)):
 
     # 1. Generate all valid intervals
     valid_intervals = set([Fraction(1,1)])
-    odds = [i for i in range(1, odd_limit + 1) if i % 2 != 0]
-    for n in odds:
-        for d in odds:
-            if n == d: continue
-            ratio = Fraction(n, d)
-            
-            # generate octave variations up to equave
-            temp_r = ratio
-            while temp_r <= equave:
-                if temp_r >= 1:
-                    valid_intervals.add(temp_r)
-                temp_r *= 2
-            
-            temp_r = ratio / 2
-            while temp_r >= 1:
-                valid_intervals.add(temp_r)
-                temp_r /= 2
+    
+    # Consider a wider range for n and d to ensure all relevant ratios are generated
+    # This is a heuristic; the exact upper bound might need tuning.
+    # For odd_limit = 15, we need to consider ratios like 3/1, 2/1, 3/2.
+    # The largest numerator/denominator we might need is related to equave * odd_limit.
+    # Let's try a simple multiple of odd_limit for the range of n and d.
+    # A safe upper bound for n and d would be odd_limit * equave.numerator (if equave is a Fraction)
+    # or a sufficiently large constant. Let's use odd_limit * 3 as a starting point.
+    max_val_for_n_d = odd_limit * 3 # Heuristic: odd_limit * 3 should be sufficient
 
+    for n_val in range(1, max_val_for_n_d + 1):
+        for d_val in range(1, max_val_for_n_d + 1):
+            if n_val == 0 or d_val == 0: continue # Avoid division by zero
+            ratio = Fraction(n_val, d_val)
+            
+            # Only add if the odd limit of the ratio is within the specified odd_limit
+            if get_odd_limit(ratio) <= odd_limit:
+                valid_intervals.add(ratio)
+
+    # Ensure equave itself is included
     if get_odd_limit(equave) <= odd_limit:
         valid_intervals.add(equave)
 

@@ -297,7 +297,7 @@ class IsoHEWidget(QWidget):
             w3 = cx / equave_cents
             w2 = 1.0 - w1 - w3
 
-            if not (-1e-9 <= w1 <= 1 + 1e-9 and -1e-9 <= w2 <= 1 + 1e-9 and -1e-9 <= w3 <= 1 + 1e-9): continue
+            if not (-1e-7 <= w1 <= 1 + 1e-7 and -1e-7 <= w2 <= 1 + 1e-7 and -1e-7 <= w3 <= 1 + 1e-7): continue
 
             x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
             y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
