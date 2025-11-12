@@ -265,12 +265,17 @@ class TriadsWindow(QMainWindow):
         spacer_after_3d = QSpacerItem(20, 10, QSizePolicy.Minimum, QSizePolicy.Fixed)
         self.sidebar_layout.addItem(spacer_after_3d)
 
-        # Dots Button
         self.dots_button = QPushButton("Dots")
         self.dots_button.setStyleSheet(self.checkable_button_style)
         self.dots_button.setCheckable(True)
         self.dots_button.toggled.connect(self.toggle_dots)
         
+        # Labels Button
+        self.labels_button = QPushButton("Labels")
+        self.labels_button.setStyleSheet(self.checkable_button_style)
+        self.labels_button.setCheckable(True)
+        self.labels_button.toggled.connect(self.toggle_dots_labels)
+
         self.mode_button = QPushButton("JI")
         self.mode_button.setStyleSheet(self.checkable_button_style)
         self.mode_button.setCheckable(True)
@@ -279,22 +284,15 @@ class TriadsWindow(QMainWindow):
 
         dots_layout = QHBoxLayout()
         dots_layout.addWidget(self.dots_button)
+        dots_layout.addWidget(self.labels_button)
         dots_layout.addWidget(self.mode_button)
         self.sidebar_layout.addLayout(dots_layout)
-
-        # Labels Button
-        self.labels_button = QPushButton("Labels")
-        self.labels_button.setStyleSheet(self.checkable_button_style)
-        self.labels_button.setCheckable(True)
-        self.labels_button.toggled.connect(self.toggle_dots_labels)
-        self.labels_button.setEnabled(False)
-        self.sidebar_layout.addWidget(self.labels_button)
 
         # Odd-Limit input
         self.odd_limit_label = QLabel("Odd-Limit")
         self.odd_limit_label.setStyleSheet("color: white;")
         self.sidebar_layout.addWidget(self.odd_limit_label)
-        self.odd_limit_entry = QLineEdit("9")
+        self.odd_limit_entry = QLineEdit("15")
         self.odd_limit_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
         self.odd_limit_entry.textChanged.connect(self.update_odd_limit)
         self.sidebar_layout.addWidget(self.odd_limit_entry)
@@ -328,7 +326,7 @@ class TriadsWindow(QMainWindow):
         # Create isohe_widget
         self.isohe_widget = IsoHEWidget(main_app)
         self.isohe_widget.set_dots_mode('JI')
-        self.isohe_widget.set_odd_limit(9)
+        self.isohe_widget.set_odd_limit(15)
 
         # Create 3D view (hidden by default). Use a container so we can swap between 2D and 3D
         self.content_container = QWidget()
@@ -520,8 +518,8 @@ class TriadsWindow(QMainWindow):
 
     def toggle_dots(self, checked):
         self.isohe_widget.set_show_dots(checked)
-        self.labels_button.setEnabled(checked)
-        if not checked: self.labels_button.setChecked(False)
+        # self.labels_button.setEnabled(checked) # This line was removed in the previous step, but double check
+        # if not checked: self.labels_button.setChecked(False) # REMOVED THIS LINE
 
         # Handle 3D EDO dots
         if self.view3d_button.isChecked() and self.view3d_widget is not None:
@@ -1331,15 +1329,29 @@ class TriadsWindow(QMainWindow):
 
                     # Generate label if labels button is checked
                     if self.labels_button.isChecked():
-                        # The 2D labels are: label = f"[0, {i}, {i+j}]"
-                        # Let's use that for now.
                         label_text = f"[0, {i}, {i+j}]"
 
-                        # Position the label slightly above the dot
-                        label_pos = transformed_vert.copy()
-                        label_pos[2] += 0.05 # Slightly higher than the dot
+                        # Get edo value
+                        try:
+                            edo = int(self.main_app.edo_entry.text())
+                        except (ValueError, AttributeError):
+                            edo = 12 # Default to 12 EDO if not available
 
-                        text_item = gl.GLTextItem(pos=label_pos, text=label_text, color=(1.0, 1.0, 1.0, 1.0))
+                        # Use the helper function from isohe_widget
+                        font_size = self.isohe_widget._get_font_size_for_label(label_text, dots_mode='EDO', edo_value=edo)
+                        
+                        # Position the label slightly above the dot if dots are shown,
+                        # otherwise centered at the dot's position.
+                        label_pos = transformed_vert.copy()
+                        if self.dots_button.isChecked(): # If dots are shown
+                            label_pos[2] += 0.05 # Slightly higher than the dot
+                        else:
+                            # When dots are not shown, center the label.
+                            # GLTextItem doesn't have a direct way to get text height,
+                            # so we'll use a small fixed offset for vertical centering in 3D.
+                            label_pos[2] += 0.01 # A small offset to prevent Z-fighting with the plane
+
+                        text_item = gl.GLTextItem(pos=label_pos, text=label_text, color=(1.0, 1.0, 1.0, 1.0), font_size=font_size)
                         self._3d_edo_labels_items.append(text_item)
 
         if edo_points_3d:

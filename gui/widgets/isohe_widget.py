@@ -158,10 +158,10 @@ class IsoHEWidget(QWidget):
             painter.setBrush(QBrush(QColor(11, 6, 86)))
             painter.drawPolygon(self.triangle)
 
-        if not for_svg:
-            painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
-            if self.show_dots:
-                self.draw_dots(painter)
+        # Always draw dots and labels, regardless of whether it's for SVG or not
+        painter.setPen(QPen(Qt.white, 1, Qt.SolidLine))
+        if self.show_dots or self.show_labels: # Draw if either dots or labels are enabled
+            self.draw_dots(painter)
 
     def save_svg(self, file_path, topo_data=None, colormap=None, model_name=None):
         if not file_path:
@@ -244,6 +244,38 @@ class IsoHEWidget(QWidget):
         else:
             self.draw_edo_dots(painter)
 
+    def _get_font_size_for_label(self, label_text, dots_mode, edo_value=12):
+        base_size_ji = 10 # Font size for num_digits <= 3 (as per user's latest instruction)
+        min_font_size_ji = 0.025  # Minimum font size (as per user's latest instruction)
+        base_size_edo = 10 # Base size for EDO labels
+
+        if dots_mode == 'JI':
+            # JI sizing logic based on total number of digits in the label, with exponential decay
+            num_digits = sum(c.isdigit() for c in label_text)
+            
+            # Exponential decay: font size halves roughly every 3 additional digits
+            # decay_factor = 0.5**(1/3) approx 0.7937
+            decay_factor = 0.79370046571 # More precise value for 0.5^(1/3)
+
+            # Ensure num_digits is at least 3 to avoid negative exponent or division by zero issues
+            # and to ensure base_size_ji is applied for the smallest labels.
+            effective_num_digits = max(3, num_digits)
+
+            calculated_font_size = base_size_ji * (decay_factor ** (effective_num_digits - 3))
+            return max(min_font_size_ji, calculated_font_size)
+
+        elif dots_mode == 'EDO':
+            # EDO sizing logic with cap
+            if edo_value <= 0:
+                return base_size_edo # Fallback for invalid EDO
+            
+            scaling_factor = (12 / edo_value)
+            # Ensure fonts do not increase in size from the default
+            scaling_factor = min(1.0, scaling_factor) # Cap at 1.0
+            
+            return base_size_edo * scaling_factor
+        return base_size_edo # Default fallback
+
     def draw_ji_dots(self, painter):
         try:
             limit = self.odd_limit
@@ -270,14 +302,23 @@ class IsoHEWidget(QWidget):
             x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
             y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
 
-            painter.drawEllipse(QPointF(x, y), 4, 4)
+            if self.show_dots:
+                painter.drawEllipse(QPointF(x, y), 4, 4)
 
             if self.show_labels:
-                font = QFont("Arial Nova", 10)
+                font_size = self._get_font_size_for_label(label, self.dots_mode)
+                font = QFont("Arial Nova", font_size)
                 painter.setFont(font)
                 painter.setPen(Qt.white)
                 text_width = painter.fontMetrics().width(label)
-                painter.drawText(QPointF(x - text_width / 2, y - 8), label)
+                text_height = painter.fontMetrics().height()
+                
+                if self.show_dots:
+                    # Position slightly above the dot
+                    painter.drawText(QPointF(x - text_width / 2, y - 8), label)
+                else:
+                    # Position centered where the dot would be
+                    painter.drawText(QPointF(x - text_width / 2, y + text_height / 4), label)
 
     def draw_edo_dots(self, painter):
         try:
@@ -310,15 +351,25 @@ class IsoHEWidget(QWidget):
                 x = w1 * self.v1.x() + w2 * self.v2.x() + w3 * self.v3.x()
                 y = w1 * self.v1.y() + w2 * self.v2.y() + w3 * self.v3.y()
 
-                painter.drawEllipse(QPointF(x, y), 4, 4)
+                if self.show_dots:
+                    painter.drawEllipse(QPointF(x, y), 4, 4)
 
                 if self.show_labels:
                     label = f"[0, {i}, {i+j}]"
-                    font = QFont("Arial Nova", 10)
+                    edo = int(self.main_app.edo_entry.text()) # Get edo value here
+                    font_size = self._get_font_size_for_label(label, self.dots_mode, edo_value=edo)
+                    font = QFont("Arial Nova", font_size)
                     painter.setFont(font)
                     painter.setPen(Qt.white)
                     text_width = painter.fontMetrics().width(label)
-                    painter.drawText(QPointF(x - text_width / 2, y - 8), label)
+                    text_height = painter.fontMetrics().height()
+
+                    if self.show_dots:
+                        # Position slightly above the dot
+                        painter.drawText(QPointF(x - text_width / 2, y - 8), label)
+                    else:
+                        # Position centered where the dot would be
+                        painter.drawText(QPointF(x - text_width / 2, y + text_height / 4), label)
 
     def mousePressEvent(self, event):
         if self.triangle.containsPoint(event.pos(), Qt.OddEvenFill):
