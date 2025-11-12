@@ -78,41 +78,85 @@ def get_integer_limit(ratio):
     except (ValueError, ZeroDivisionError):
         return 1
 
-def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # Updated signature
-    if limit_value < 1:
+def get_primes_less_than_or_equal_to(p):
+    primes = []
+    for num in range(2, p + 1):
+        is_prime = True
+        for i in range(2, int(num**0.5) + 1):
+            if num % i == 0:
+                is_prime = False
+                break
+        if is_prime:
+            primes.append(num)
+    return primes
+
+def get_max_exponent_for_p_smooth(n, p_limit, primes=None):
+    if primes is None:
+        primes = get_primes_less_than_or_equal_to(p_limit)
+    
+    max_exp = 0
+    
+    temp_n = n
+    for p in primes:
+        if temp_n == 1:
+            break
+        if temp_n % p == 0:
+            exp = 0
+            while temp_n % p == 0:
+                exp += 1
+                temp_n //= p
+            max_exp = max(max_exp, exp)
+            
+    if temp_n > 1: # Remainder has prime factors > p_limit, so not p-smooth
+        return float('inf')
+        
+    return max_exp
+
+def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prime_limit=7, max_exponent=4):
+    if limit_value < 1 and limit_mode != "prime":
         return []
 
-    # 1. Generate all valid intervals
     valid_intervals = set([Fraction(1,1)])
     
-    # Consider a wider range for n and d to ensure all relevant ratios are generated
-    # This is a heuristic; the exact upper bound might need tuning.
-    # For odd_limit = 15, we need to consider ratios like 3/1, 2/1, 3/2.
-    # The largest numerator/denominator we might need is related to equave * odd_limit.
-    # Let's try a simple multiple of odd_limit for the range of n and d.
-    # A safe upper bound for n and d would be odd_limit * equave.numerator (if equave is a Fraction)
-    # or a sufficiently large constant. Let's use odd_limit * 3 as a starting point.
-    max_val_for_n_d = limit_value * 3 # Heuristic: limit_value * 3 should be sufficient
+    max_val_for_n_d = 0
+    if limit_mode == "odd" or limit_mode == "integer":
+        max_val_for_n_d = limit_value * 3
+    elif limit_mode == "prime":
+        # For prime limit, we need a different approach to find the max value for n and d
+        # A rough estimation could be prime_limit ^ max_exponent
+        max_val_for_n_d = prime_limit * max_exponent * 3 # Heuristic
+
+    primes = None
+    if limit_mode == "prime":
+        primes = get_primes_less_than_or_equal_to(prime_limit)
 
     for n_val in range(1, max_val_for_n_d + 1):
         for d_val in range(1, max_val_for_n_d + 1):
-            if n_val == 0 or d_val == 0: continue # Avoid division by zero
+            if n_val == 0 or d_val == 0: continue
             ratio = Fraction(n_val, d_val)
             
-            # Only add if the ratio's limit is within the specified limit_value
             if limit_mode == "odd":
                 if get_odd_limit(ratio) <= limit_value:
                     valid_intervals.add(ratio)
             elif limit_mode == "integer":
                 if get_integer_limit(ratio) <= limit_value:
                     valid_intervals.add(ratio)
+            elif limit_mode == "prime":
+                num_exp = get_max_exponent_for_p_smooth(ratio.numerator, prime_limit, primes)
+                den_exp = get_max_exponent_for_p_smooth(ratio.denominator, prime_limit, primes)
+                if num_exp <= max_exponent and den_exp <= max_exponent:
+                    valid_intervals.add(ratio)
 
-    # Ensure equave itself is included based on the current limit mode
     if limit_mode == "odd":
         if get_odd_limit(equave) <= limit_value:
             valid_intervals.add(equave)
     elif limit_mode == "integer":
         if get_integer_limit(equave) <= limit_value:
+            valid_intervals.add(equave)
+    elif limit_mode == "prime":
+        num_exp = get_max_exponent_for_p_smooth(equave.numerator, prime_limit, primes)
+        den_exp = get_max_exponent_for_p_smooth(equave.denominator, prime_limit, primes)
+        if num_exp <= max_exponent and den_exp <= max_exponent:
             valid_intervals.add(equave)
 
     sorted_intervals = sorted(list(valid_intervals))
@@ -120,7 +164,6 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # U
     triads = []
     triad_labels = set()
 
-    # 2. Form triads from intervals
     for i in range(len(sorted_intervals)):
         r1 = sorted_intervals[i]
         for j in range(i, len(sorted_intervals)):
@@ -131,7 +174,6 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # U
             cx_ratio = None
             cy_ratio = None
 
-            # Filter r3 based on the current limit mode
             if limit_mode == "odd":
                 if get_odd_limit(r3) <= limit_value:
                     cx_ratio = r1
@@ -140,8 +182,14 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # U
                 if get_integer_limit(r3) <= limit_value:
                     cx_ratio = r1
                     cy_ratio = r3
-            
-            if cx_ratio is None or cy_ratio is None: continue # Skip if r3 filter failed
+            elif limit_mode == "prime":
+                num_exp = get_max_exponent_for_p_smooth(r3.numerator, prime_limit, primes)
+                den_exp = get_max_exponent_for_p_smooth(r3.denominator, prime_limit, primes)
+                if num_exp <= max_exponent and den_exp <= max_exponent:
+                    cx_ratio = r1
+                    cy_ratio = r3
+
+            if cx_ratio is None or cy_ratio is None: continue
 
             if cx_ratio < 1 or cy_ratio < 1: continue
 
@@ -150,7 +198,6 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # U
 
             if cx + cy > 1200 * math.log2(equave) + 1e-9: continue
 
-            # Generate label 1 : r1 : r2
             common_denom = r1.denominator * r2.denominator
             a = common_denom
             b = r1.numerator * r2.denominator
@@ -165,8 +212,5 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd"): # U
             if label not in triad_labels:
                 triads.append(((cx, cy), label))
                 triad_labels.add(label)
-                # DEBUG PRINT
-                if label in ["1:1:2", "1:2:2", "1:2:3"]:
-                    print(f"DEBUG: Generated triad: {label}, cx={cx}, cy={cy}, equave={equave}, equave_cents={1200 * math.log2(equave)}")
 
     return triads

@@ -46,10 +46,11 @@ class IsoHEWidget(QWidget):
         self.show_dots = False
         self.show_labels = False
         self.dots_mode = 'JI'
-        # self.odd_limit = 15 # REMOVE THIS
 
-        self.limit_mode = "odd" # New attribute
-        self.limit_value = 15 # New attribute
+        self.limit_mode = "odd"
+        self.limit_value = 15
+        self.prime_limit = 7
+        self.max_exponent = 4
 
         self.topo_data = None
         self.topo_colormap = None
@@ -61,16 +62,17 @@ class IsoHEWidget(QWidget):
         self.dots_mode = mode
         self.update()
 
-    # def set_odd_limit(self, limit): # REMOVE THIS
-    #     self.odd_limit = limit
-    #     self.update()
-
-    def set_limit_mode(self, mode): # New method
+    def set_limit_mode(self, mode):
         self.limit_mode = mode
         self.update()
 
-    def set_limit_value(self, value): # New method
+    def set_limit_value(self, value):
         self.limit_value = value
+        self.update()
+
+    def set_prime_limit(self, prime, exponent):
+        self.prime_limit = prime
+        self.max_exponent = exponent
         self.update()
 
     def set_topo_data(self, data, colormap, model_name):
@@ -289,8 +291,9 @@ class IsoHEWidget(QWidget):
 
     def draw_ji_dots(self, painter):
         try:
-            limit = self.limit_value # Use new limit_value
-            if limit <= 0: return
+            if self.limit_mode != 'prime':
+                limit = self.limit_value
+                if limit <= 0: return
         except (ValueError, AttributeError):
             return
 
@@ -299,7 +302,7 @@ class IsoHEWidget(QWidget):
         painter.setBrush(QColor('#A0A0A0'))
         painter.setPen(QPen(QColor('#0437f2'), 1))
 
-        triads = generate_ji_triads(limit, self.equave, self.limit_mode) # Pass limit_mode
+        triads = generate_ji_triads(self.limit_value, self.equave, self.limit_mode, self.prime_limit, self.max_exponent)
 
         for (cx, cy), label in triads:
             if cx + cy > equave_cents + 1e-9: continue

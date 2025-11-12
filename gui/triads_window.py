@@ -290,7 +290,7 @@ class TriadsWindow(QMainWindow):
 
         # Limit Type Dropdown
         self.limit_type_dropdown = QComboBox()
-        self.limit_type_dropdown.addItems(["Odd-Limit", "Integer-Limit"])
+        self.limit_type_dropdown.addItems(["Odd-Limit", "Integer-Limit", "Prime-Limit"])
         self.limit_type_dropdown.setCurrentText("Odd-Limit") # Default to Odd-Limit
         self.limit_type_dropdown.setStyleSheet("""
             QComboBox {
@@ -319,6 +319,28 @@ class TriadsWindow(QMainWindow):
         self.limit_value_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
         self.limit_value_entry.textChanged.connect(self.update_limit_value) # New method name
         self.sidebar_layout.addWidget(self.limit_value_entry)
+
+        # Prime Limit Inputs
+        self.prime_limit_widget = QWidget()
+        prime_limit_layout = QVBoxLayout(self.prime_limit_widget)
+        prime_limit_layout.setContentsMargins(0, 0, 0, 0)
+        prime_limit_layout.setSpacing(4)
+        self.prime_limit_label = QLabel("Prime limit")
+        self.prime_limit_label.setStyleSheet("color: white;")
+        prime_limit_layout.addWidget(self.prime_limit_label)
+        self.prime_limit_entry = QLineEdit("7")
+        self.prime_limit_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
+        self.prime_limit_entry.textChanged.connect(self.update_prime_limit)
+        prime_limit_layout.addWidget(self.prime_limit_entry)
+        self.max_exponent_label = QLabel("Maximum exponent")
+        self.max_exponent_label.setStyleSheet("color: white;")
+        prime_limit_layout.addWidget(self.max_exponent_label)
+        self.max_exponent_entry = QLineEdit("4")
+        self.max_exponent_entry.setStyleSheet("background-color: #2C2F3B; color: white; border: 1px solid #444; border-radius: 4px; padding: 2px; padding-left: 6px;")
+        self.max_exponent_entry.textChanged.connect(self.update_prime_limit)
+        prime_limit_layout.addWidget(self.max_exponent_entry)
+        self.sidebar_layout.addWidget(self.prime_limit_widget)
+        self.prime_limit_widget.hide()
         
         # Equave input, compact format
         eq_layout = QVBoxLayout()
@@ -376,12 +398,12 @@ class TriadsWindow(QMainWindow):
                 self._view3d_original_mouse_press = self.view3d_widget.mousePressEvent
                 self._view3d_original_mouse_move = getattr(self.view3d_widget, 'mouseMoveEvent', None)
                 self._view3d_original_mouse_release = getattr(self.view3d_widget, 'mouseReleaseEvent', None)
-                self._view3d_rotating = False
+                self._3d_rotating = False
 
                 def _view3d_mouse_press(ev):
                     try:
                         if ev.modifiers() & Qt.ShiftModifier:
-                            self._view3d_rotating = True
+                            self._3d_rotating = True
                             if self._view3d_original_mouse_press:
                                 self._view3d_original_mouse_press(ev)
                         else:
@@ -391,7 +413,7 @@ class TriadsWindow(QMainWindow):
 
                 def _view3d_mouse_move(ev):
                     try:
-                        if self._view3d_rotating:
+                        if self._3d_rotating:
                             if self._view3d_original_mouse_move:
                                 self._view3d_original_mouse_move(ev)
                         else:
@@ -401,14 +423,14 @@ class TriadsWindow(QMainWindow):
 
                 def _view3d_mouse_release(ev):
                     try:
-                        if self._view3d_rotating:
+                        if self._3d_rotating:
                             if self._view3d_original_mouse_release:
                                 self._view3d_original_mouse_release(ev)
                         else:
                             self._on_view3d_mouse_release(ev)
-                        self._view3d_rotating = False
+                        self._3d_rotating = False
                     except Exception:
-                        self._view3d_rotating = False
+                        self._3d_rotating = False
 
                 self.view3d_widget.mousePressEvent = _view3d_mouse_press
                 self.view3d_widget.mouseMoveEvent = _view3d_mouse_move
@@ -768,13 +790,32 @@ class TriadsWindow(QMainWindow):
     def update_limit_mode(self, index):
         mode = self.limit_type_dropdown.itemText(index).replace("-Limit", "").lower()
         self.isohe_widget.set_limit_mode(mode)
+
+        if mode == "prime":
+            self.limit_value_entry.hide()
+            self.prime_limit_widget.show()
+            self.update_prime_limit()
+        else:
+            self.limit_value_entry.show()
+            self.prime_limit_widget.hide()
+            self.update_limit_value(self.limit_value_entry.text())
+
         self.isohe_widget.update() # Force redraw
 
     def update_limit_value(self, text):
         try:
             limit = int(text)
             if limit > 0:
-                self.isohe_widget.set_limit_value(limit) # New method in isohe_widget
+                self.isohe_widget.set_limit_value(limit)
+        except ValueError:
+            pass
+
+    def update_prime_limit(self):
+        try:
+            prime = int(self.prime_limit_entry.text())
+            exponent = int(self.max_exponent_entry.text())
+            if prime > 0 and exponent > 0:
+                self.isohe_widget.set_prime_limit(prime, exponent)
         except ValueError:
             pass
 
