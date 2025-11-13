@@ -1,10 +1,12 @@
 import math
 import numpy as np
 import scipy.signal
+from itertools import combinations_with_replacement
 
 def cents(x):
     """Converts a ratio to cents."""
-    # The input ratios from the generator are guaranteed to be > 0.
+    # This function is called with numpy arrays, the check must be vectorized.
+    # However, the generator logic ensures x > 0, so we can safely log.
     return 1200 * np.log2(x)
 
 def generate_tetrahedron_data(equave_ratio, resolution):
@@ -104,3 +106,38 @@ def generate_tetrahedron_data(equave_ratio, resolution):
 
     # Return the grids in the correct (c1, c2, c3) order for the widget
     return c1_grid, c2_grid, c3_grid, entropy
+
+def generate_odd_limit_points(odd_limit, equave_ratio):
+    """
+    Generates a list of 4-note chords based on an odd limit.
+    Returns points as (c1, c2, c3, sum_of_integers).
+    """
+    points = []
+    equave_ratio_float = float(equave_ratio)
+    
+    # Generate list of odd numbers up to the limit
+    odds = list(range(1, odd_limit + 1, 2))
+    
+    # Find all unique combinations of 4 odd numbers
+    for combo in combinations_with_replacement(odds, 4):
+        i, j, k, l = combo
+        
+        # Ensure the chord is within the equave
+        if l / i > equave_ratio_float:
+            continue
+            
+        # Ensure the components are coprime
+        if math.gcd(math.gcd(math.gcd(i, j), k), l) != 1:
+            continue
+            
+        # Calculate interval cents
+        c1 = cents(j / i)
+        c2 = cents(k / j)
+        c3 = cents(l / k)
+        
+        # Calculate sum
+        s = i + j + k + l
+        
+        points.append((c1, c2, c3, s))
+        
+    return points
