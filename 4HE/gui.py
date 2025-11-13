@@ -42,8 +42,9 @@ class FourHEWindow(QMainWindow):
         res_layout = QHBoxLayout()
         res_label = QLabel("Resolution:")
         self.resolution_input = QSpinBox()
-        self.resolution_input.setRange(10, 100)
-        self.resolution_input.setValue(25) # HE model is more intensive
+        self.resolution_input.setRange(10, 300)
+        self.resolution_input.setValue(60)
+        self.resolution_input.setToolTip("Higher values increase detail but require much more computation time.")
         res_layout.addWidget(res_label)
         res_layout.addWidget(self.resolution_input)
         control_layout.addLayout(res_layout)
