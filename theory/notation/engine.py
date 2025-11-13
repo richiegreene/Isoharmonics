@@ -1,6 +1,6 @@
 import math
-from theory.notation.note import Note
-from theory.notation.formatters import printnote
+from .note import Note
+from .formatters import printnote
 
 def fifth(edo):
     return round(math.log(1.5) / math.log(2) * edo)
