@@ -53,6 +53,17 @@ class FourHEWindow(QMainWindow):
         self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
         control_layout.addWidget(self.view_mode_combo)
 
+        # Limit Mode Dropdown
+        limit_mode_layout = QHBoxLayout()
+        limit_mode_label = QLabel("Limit Mode:")
+        self.limit_mode_combo = QComboBox()
+        self.limit_mode_combo.addItems(["Odd Limit", "Integer Limit"]) # Add "Prime Limit" later if needed
+        self.limit_mode_combo.currentTextChanged.connect(self._update_limit_mode)
+        limit_mode_layout.addWidget(limit_mode_label)
+        limit_mode_layout.addWidget(self.limit_mode_combo)
+        control_layout.addLayout(limit_mode_layout)
+        self.limit_mode = "odd" # Initialize attribute
+
         # Odd Limit
         self.odd_limit_layout_widget = QWidget()
         self.odd_limit_layout = QHBoxLayout(self.odd_limit_layout_widget)
@@ -68,12 +79,12 @@ class FourHEWindow(QMainWindow):
         self.font_size_multiplier_layout = QHBoxLayout(self.font_size_multiplier_widget)
         self.font_size_multiplier_layout.setContentsMargins(0,0,0,0) # Remove margins for the inner layout
         font_size_label = QLabel("Font Size Multiplier:")
-        self.font_size_multiplier_input = QLineEdit("50") # Default value
+        self.font_size_multiplier_input = QLineEdit("3") # Default value
         self.font_size_multiplier_input.textChanged.connect(self._update_font_size_multiplier)
         self.font_size_multiplier_layout.addWidget(font_size_label)
         self.font_size_multiplier_layout.addWidget(self.font_size_multiplier_input)
         control_layout.addWidget(self.font_size_multiplier_widget) # Add the widget to the control layout
-        self.font_size_multiplier = 50.0 # Initialize attribute
+        self.font_size_multiplier = 3.0 # Initialize attribute, default to 3.0
 
         # Toggle visibility of odd-limit based on view mode
         self.view_mode_combo.currentTextChanged.connect(self.toggle_odd_limit_visibility)
@@ -90,17 +101,28 @@ class FourHEWindow(QMainWindow):
         dock_widget.setWidget(control_widget)
         self.addDockWidget(Qt.LeftDockWidgetArea, dock_widget)
 
+    def _update_limit_mode(self, text):
+        if text == "Odd Limit":
+            self.limit_mode = "odd"
+            self.odd_limit_input.setToolTip("Odd-Limit must be an odd number >= 3.")
+        elif text == "Integer Limit":
+            self.limit_mode = "integer"
+            self.odd_limit_input.setToolTip("Integer-Limit must be an integer >= 1.")
+        # Add other limit modes here if implemented
+        self.update_visualization() # Update visualization when limit mode changes
+
     def toggle_odd_limit_visibility(self, view_mode):
         """Shows or hides the Odd-Limit input and Font Size Multiplier based on the selected view mode."""
         is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
         self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
         self.font_size_multiplier_widget.setVisible(is_scatter_or_labels) # Show/hide multiplier widget
+        self.limit_mode_combo.setVisible(is_scatter_or_labels) # Show/hide limit mode combo
 
     def _update_font_size_multiplier(self, text):
         try:
             self.font_size_multiplier = float(text)
         except ValueError:
-            self.font_size_multiplier = 50.0 # Revert to default on invalid input
+            self.font_size_multiplier = 3.0 # Revert to default on invalid input
         self.update_visualization() # Update visualization when multiplier changes
 
     def update_visualization(self):
@@ -114,11 +136,18 @@ class FourHEWindow(QMainWindow):
             show_points = (view_mode == "Scatter Plot")
             show_labels = (view_mode == "Labels")
             
-            odd_limit = 0
+            limit_value = 0
+            current_limit_mode = self.limit_mode # Get the selected limit mode
+            
             if show_points or show_labels:
-                odd_limit = int(self.odd_limit_input.text())
-                if odd_limit < 3 or odd_limit % 2 == 0:
-                    raise ValueError("Odd-Limit must be an odd number >= 3.")
+                limit_value = int(self.odd_limit_input.text())
+                if current_limit_mode == "odd":
+                    if limit_value < 3 or limit_value % 2 == 0:
+                        raise ValueError("Odd-Limit must be an odd number >= 3.")
+                elif current_limit_mode == "integer":
+                    if limit_value < 1:
+                        raise ValueError("Integer-Limit must be an integer >= 1.")
+                # Add validation for other limit modes here
 
         except ValueError as e:
             QMessageBox.warning(self, "Invalid Input", str(e))
@@ -144,11 +173,11 @@ class FourHEWindow(QMainWindow):
 
         points_data = None
         if show_points:
-            points_data = generate_odd_limit_points(odd_limit, equave_ratio)
+            points_data = generate_odd_limit_points(limit_value, equave_ratio, limit_mode=current_limit_mode)
 
         labels_data = None
         if show_labels:
-            labels_data = generate_ji_tetra_labels(odd_limit, equave_ratio)
+            labels_data = generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode=current_limit_mode)
 
         self.tetra_widget.update_tetrahedron(
             volume_data=volume_data, 

@@ -2,6 +2,8 @@ import math
 import numpy as np
 import scipy.signal
 from itertools import combinations_with_replacement
+from fractions import Fraction
+from theory.calculations import get_odd_part_of_number, get_odd_limit
 
 def cents(x):
     """Converts a ratio to cents."""
@@ -107,19 +109,33 @@ def generate_tetrahedron_data(equave_ratio, resolution):
     # Return the grids in the correct (c1, c2, c3) order for the widget
     return c1_grid, c2_grid, c3_grid, entropy
 
-def generate_odd_limit_points(odd_limit, equave_ratio):
+def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd"):
     """
     Generates a list of 4-note chords based on an odd limit.
-    Returns points as (c1, c2, c3, sum_of_integers).
+    Returns points as (c1, c2, c3, intervallic_odd_limit).
     """
     points = []
     equave_ratio_float = float(equave_ratio)
     
-    # Generate list of odd numbers up to the limit
-    odds = list(range(1, odd_limit + 1, 2))
+    # Generate list of numbers whose odd part is up to the limit
+    valid_numbers = set()
+    if limit_mode == "odd":
+        # Heuristic for max number to check.
+        max_num_to_check = max(limit_value * 2, 100) # A reasonable heuristic
+        for num in range(1, max_num_to_check + 1):
+            if get_odd_part_of_number(num) <= limit_value:
+                valid_numbers.add(num)
+    elif limit_mode == "integer":
+        valid_numbers = set(range(1, limit_value + 1))
+    # Add other limit modes here if implemented
+
+    if not valid_numbers:
+        return []
+
+    sorted_valid_numbers = sorted(list(valid_numbers))
     
-    # Find all unique combinations of 4 odd numbers
-    for combo in combinations_with_replacement(odds, 4):
+    # Find all unique combinations of 4 valid numbers
+    for combo in combinations_with_replacement(sorted_valid_numbers, 4):
         i, j, k, l = combo
         
         # Ensure the chord is within the equave
@@ -130,13 +146,25 @@ def generate_odd_limit_points(odd_limit, equave_ratio):
         if math.gcd(math.gcd(math.gcd(i, j), k), l) != 1:
             continue
             
+        # Ensure the odd limit of all intervals is within the limit_value (only for odd limit mode)
+        if limit_mode == "odd":
+            if (get_odd_limit(Fraction(j, i)) > limit_value or
+                get_odd_limit(Fraction(k, j)) > limit_value or
+                get_odd_limit(Fraction(l, k)) > limit_value):
+                continue
+        
         # Calculate interval cents
         c1 = cents(j / i)
         c2 = cents(k / j)
         c3 = cents(l / k)
         
-        # Calculate sum
-        s = i + j + k + l
+        # Calculate simplicity as the intervallic odd limit (only for odd limit mode)
+        if limit_mode == "odd":
+            s = max(get_odd_limit(Fraction(j, i)),
+                    get_odd_limit(Fraction(k, j)),
+                    get_odd_limit(Fraction(l, k)))
+        else: # For integer limit, use sum of integers as simplicity
+            s = i + j + k + l
         
         points.append((c1, c2, c3, s))
         
