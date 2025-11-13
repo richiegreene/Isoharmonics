@@ -39,7 +39,7 @@ class TetrahedronWidget(gl.GLViewWidget):
         x_grid, y_grid, z_grid, entropy = volume_data
         if entropy is None: return
 
-        # --- Transformation (calculated from volume data) ---
+        # --- Create Common Transformations ---
         res = entropy.shape[0]
         M = np.array([
             [1, 0.5, 0.5],
@@ -48,14 +48,16 @@ class TetrahedronWidget(gl.GLViewWidget):
         ])
         M4x4 = np.eye(4); M4x4[:3, :3] = M
         
-        scale_transform = Transform3D(); scale_transform.scale(1.0/res, 1.0/res, 1.0/res)
         tetra_transform = Transform3D(M4x4)
         center_of_mass = np.array([0.5, np.sqrt(3)/6, np.sqrt(6)/12])
         translate_transform = Transform3D(); translate_transform.translate(-center_of_mass[0], -center_of_mass[1], -center_of_mass[2])
-        final_transform = translate_transform * tetra_transform * scale_transform
 
         # --- Render Volume Data ---
         if show_volume:
+            # Create transform for volume (scales from grid space)
+            scale_transform = Transform3D(); scale_transform.scale(1.0/res, 1.0/res, 1.0/res)
+            volume_transform = translate_transform * tetra_transform * scale_transform
+
             min_e, max_e = np.nanmin(entropy), np.nanmax(entropy)
             norm_entropy = (entropy - min_e) / (max_e - min_e) if max_e > min_e else np.zeros_like(entropy)
             cmap = pyqtgraph.colormap.get('viridis')
@@ -64,11 +66,14 @@ class TetrahedronWidget(gl.GLViewWidget):
             colored_data = lut[(safe_norm_entropy * 255).astype(int)]; colored_data[nan_mask] = [0,0,0,0]
             
             self.volume_item = gl.GLVolumeItem(colored_data)
-            self.volume_item.setTransform(final_transform)
+            self.volume_item.setTransform(volume_transform)
             self.addItem(self.volume_item)
 
         # --- Render Scatter Plot as Globular Clusters ---
         if show_points and points_data:
+            # Create transform for scatter plot (assumes points are already in 0-1 space)
+            scatter_transform = translate_transform * tetra_transform
+
             points = np.array(points_data)
             if len(points) == 0: return
                 
@@ -82,9 +87,7 @@ class TetrahedronWidget(gl.GLViewWidget):
             norm_s = 1.0 - ((sums - min_s) / (max_s - min_s + 1e-9))
             radii = (norm_s * 0.05) + 0.01
 
-            all_core_points = []
-            all_rim_points = []
-
+            all_core_points, all_rim_points = [], []
             for i in range(len(norm_coords)):
                 center_point = norm_coords[i]
                 radius = radii[i]
@@ -96,9 +99,9 @@ class TetrahedronWidget(gl.GLViewWidget):
 
             if all_core_points:
                 self.core_scatter_item = gl.GLScatterPlotItem(pos=np.array(all_core_points), size=0.5, color=(1,1,1,0.9), pxMode=True)
-                self.core_scatter_item.setTransform(final_transform)
+                self.core_scatter_item.setTransform(scatter_transform)
                 self.addItem(self.core_scatter_item)
             if all_rim_points:
                 self.rim_scatter_item = gl.GLScatterPlotItem(pos=np.array(all_rim_points), size=0.1, color=(1,1,1,0.7), pxMode=True)
-                self.rim_scatter_item.setTransform(final_transform)
+                self.rim_scatter_item.setTransform(scatter_transform)
                 self.addItem(self.rim_scatter_item)
