@@ -19,7 +19,7 @@ class TetrahedronWidget(gl.GLViewWidget):
         """Generates points for a single globular cluster, centered at (0,0,0)."""
         # Generate core stars
         core_coords = np.random.normal(0, 1, (num_core, 3))
-        core_coords *= (radius / 2.5)
+        core_coords *= (radius / 3.5)
         
         # Generate rim stars
         rim_coords = np.random.normal(0, 1, (num_rim, 3))
@@ -91,9 +91,12 @@ class TetrahedronWidget(gl.GLViewWidget):
             for i in range(len(norm_coords)):
                 center_point = norm_coords[i]
                 radius = radii[i]
-                num_stars = int(norm_s[i] * 200) + 50
+                # More important chords get more stars. Allocate more to the core.
+                total_stars = int(norm_s[i] * 250) + 50
+                num_core = int(total_stars * 0.6)
+                num_rim = int(total_stars * 0.4)
                 
-                core_pts, rim_pts = self._generate_globular_cluster(radius, int(num_stars/4), num_stars)
+                core_pts, rim_pts = self._generate_globular_cluster(radius, num_core, num_rim)
                 all_core_points.extend(core_pts + center_point)
                 all_rim_points.extend(rim_pts + center_point)
 
