@@ -2,6 +2,12 @@ import math
 from fractions import Fraction
 from functools import reduce
 from math import gcd
+from itertools import combinations_with_replacement
+import numpy as np
+
+def cents(x):
+    """Converts a ratio to cents."""
+    return 1200 * np.log2(x)
 
 def calculate_edo_step(cents, edo):
     step_size = 1200 / edo
@@ -214,3 +220,79 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
                 triad_labels.add(label)
 
     return triads
+
+def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", prime_limit=7, max_exponent=4):
+    """
+    Generates a list of 4-note JI chords (labels) and their 3D coordinates (c1, c2, c3)
+    and simplicity (sum of integers) for the tetrahedron.
+    """
+    labels_data = []
+    equave_ratio_float = float(equave_ratio)
+
+    # Generate list of odd numbers up to the limit
+    # For prime limit, we need to generate numbers whose prime factors are within the limit
+    valid_numbers = set()
+    if limit_mode == "odd":
+        valid_numbers = set(range(1, limit_value + 1, 2))
+    elif limit_mode == "integer":
+        valid_numbers = set(range(1, limit_value + 1))
+    elif limit_mode == "prime":
+        primes = get_primes_less_than_or_equal_to(prime_limit)
+        # Generate numbers whose prime factors are within the prime_limit
+        # and whose exponents are within max_exponent
+        # This is a simplified approach, a more robust one would involve generating all p-smooth numbers
+        # up to a certain magnitude. For now, we'll generate numbers by multiplying primes.
+        
+        # Heuristic: generate numbers up to a certain product of primes
+        # This might not be exhaustive but covers common cases
+        max_num_val = prime_limit * max_exponent * 4 # A heuristic upper bound
+        
+        for num in range(1, max_num_val + 1):
+            temp_num = num
+            is_valid = True
+            for p in primes:
+                if p > temp_num: break
+                if temp_num % p == 0:
+                    exp = 0
+                    while temp_num % p == 0:
+                        exp += 1
+                        temp_num //= p
+                    if exp > max_exponent:
+                        is_valid = False
+                        break
+            if temp_num == 1 and is_valid: # All prime factors were within the limit
+                valid_numbers.add(num)
+            elif temp_num > 1: # Has prime factors outside the limit
+                is_valid = False
+            
+    if not valid_numbers:
+        return []
+
+    sorted_valid_numbers = sorted(list(valid_numbers))
+    
+    # Find all unique combinations of 4 valid numbers
+    for combo in combinations_with_replacement(sorted_valid_numbers, 4):
+        i, j, k, l = combo
+        
+        # Ensure the chord is within the equave
+        if l / i > equave_ratio_float:
+            continue
+            
+        # Ensure the components are coprime
+        if gcd(gcd(gcd(i, j), k), l) != 1:
+            continue
+            
+        # Calculate interval cents
+        c1 = cents(j / i)
+        c2 = cents(k / j)
+        c3 = cents(l / k)
+        
+        # Calculate simplicity (sum of integers)
+        simplicity = i + j + k + l
+        
+        # Format label
+        label = f"{i}:{j}:{k}:{l}"
+        
+        labels_data.append(((c1, c2, c3), label, simplicity))
+        
+    return labels_data

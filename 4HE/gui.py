@@ -1,10 +1,16 @@
 import sys
+import os
 from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QDockWidget, QSpinBox,
                              QMessageBox, QProgressDialog, QComboBox)
 from PyQt5.QtCore import Qt
+
+# Add the 'Isoharmonics' directory to the Python path
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 from tetrahedron_generator import generate_tetrahedron_data, generate_odd_limit_points
 from widgets.tetrahedron_widget import TetrahedronWidget
+from theory.calculations import generate_ji_tetra_labels
 
 class FourHEWindow(QMainWindow):
     def __init__(self):
@@ -44,7 +50,7 @@ class FourHEWindow(QMainWindow):
 
         # View Mode Dropdown
         self.view_mode_combo = QComboBox()
-        self.view_mode_combo.addItems(["Volume Data", "Scatter Plot"])
+        self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
         control_layout.addWidget(self.view_mode_combo)
 
         # Odd Limit
@@ -56,6 +62,18 @@ class FourHEWindow(QMainWindow):
         self.odd_limit_layout.addWidget(odd_limit_label)
         self.odd_limit_layout.addWidget(self.odd_limit_input)
         control_layout.addWidget(self.odd_limit_layout_widget)
+
+        # Font Size Multiplier
+        self.font_size_multiplier_widget = QWidget() # New QWidget to hold the layout
+        self.font_size_multiplier_layout = QHBoxLayout(self.font_size_multiplier_widget)
+        self.font_size_multiplier_layout.setContentsMargins(0,0,0,0) # Remove margins for the inner layout
+        font_size_label = QLabel("Font Size Multiplier:")
+        self.font_size_multiplier_input = QLineEdit("50") # Default value
+        self.font_size_multiplier_input.textChanged.connect(self._update_font_size_multiplier)
+        self.font_size_multiplier_layout.addWidget(font_size_label)
+        self.font_size_multiplier_layout.addWidget(self.font_size_multiplier_input)
+        control_layout.addWidget(self.font_size_multiplier_widget) # Add the widget to the control layout
+        self.font_size_multiplier = 50.0 # Initialize attribute
 
         # Toggle visibility of odd-limit based on view mode
         self.view_mode_combo.currentTextChanged.connect(self.toggle_odd_limit_visibility)
@@ -73,9 +91,17 @@ class FourHEWindow(QMainWindow):
         self.addDockWidget(Qt.LeftDockWidgetArea, dock_widget)
 
     def toggle_odd_limit_visibility(self, view_mode):
-        """Shows or hides the Odd-Limit input based on the selected view mode."""
-        is_scatter = (view_mode == "Scatter Plot")
-        self.odd_limit_layout_widget.setVisible(is_scatter)
+        """Shows or hides the Odd-Limit input and Font Size Multiplier based on the selected view mode."""
+        is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
+        self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
+        self.font_size_multiplier_widget.setVisible(is_scatter_or_labels) # Show/hide multiplier widget
+
+    def _update_font_size_multiplier(self, text):
+        try:
+            self.font_size_multiplier = float(text)
+        except ValueError:
+            self.font_size_multiplier = 50.0 # Revert to default on invalid input
+        self.update_visualization() # Update visualization when multiplier changes
 
     def update_visualization(self):
         try:
@@ -86,9 +112,10 @@ class FourHEWindow(QMainWindow):
             view_mode = self.view_mode_combo.currentText()
             show_volume = (view_mode == "Volume Data")
             show_points = (view_mode == "Scatter Plot")
+            show_labels = (view_mode == "Labels")
             
             odd_limit = 0
-            if show_points:
+            if show_points or show_labels:
                 odd_limit = int(self.odd_limit_input.text())
                 if odd_limit < 3 or odd_limit % 2 == 0:
                     raise ValueError("Odd-Limit must be an odd number >= 3.")
@@ -105,7 +132,7 @@ class FourHEWindow(QMainWindow):
         QApplication.processEvents()
 
         volume_data = None
-        if show_volume or show_points:
+        if show_volume: # Only generate volume data if needed
             volume_data = generate_tetrahedron_data(equave_ratio, resolution)
             if volume_data is None or volume_data[3] is None:
                 QMessageBox.warning(self, "Generation Error", "Could not generate HE data for coordinate system.")
@@ -119,11 +146,18 @@ class FourHEWindow(QMainWindow):
         if show_points:
             points_data = generate_odd_limit_points(odd_limit, equave_ratio)
 
+        labels_data = None
+        if show_labels:
+            labels_data = generate_ji_tetra_labels(odd_limit, equave_ratio)
+
         self.tetra_widget.update_tetrahedron(
             volume_data=volume_data, 
             points_data=points_data,
+            labels_data=labels_data, # Pass labels_data
             show_volume=show_volume,
-            show_points=show_points
+            show_points=show_points,
+            show_labels=show_labels, # Pass show_labels
+            font_size_multiplier=self.font_size_multiplier # Pass font_size_multiplier
         )
         
         progress.setValue(100)
