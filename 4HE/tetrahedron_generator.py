@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 from itertools import combinations_with_replacement
 from fractions import Fraction
-from theory.calculations import get_odd_part_of_number, get_odd_limit
+from theory.calculations import get_odd_limit, _generate_valid_numbers
 
 def cents(x):
     """Converts a ratio to cents."""
@@ -96,7 +96,7 @@ def generate_tetrahedron_data(equave_ratio, resolution):
     
     # The entropy grid is indexed (cz, cy, cx), so we need to match the mask to that shape
     # The grids from mgrid are (x,y,z) indexed, so c1_grid is the x-axis etc.
-    # We need to transpose the mask to match entropy's (z,y,x) shape.
+    # We need to transpose the aask to match entropy's (z,y,x) shape.
     mask = c1_grid + c2_grid + c3_grid > max_cents
     mask = np.transpose(mask, (2, 1, 0))
 
@@ -117,17 +117,7 @@ def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd"):
     points = []
     equave_ratio_float = float(equave_ratio)
     
-    # Generate list of numbers whose odd part is up to the limit
-    valid_numbers = set()
-    if limit_mode == "odd":
-        # Heuristic for max number to check.
-        max_num_to_check = max(limit_value * 2, 100) # A reasonable heuristic
-        for num in range(1, max_num_to_check + 1):
-            if get_odd_part_of_number(num) <= limit_value:
-                valid_numbers.add(num)
-    elif limit_mode == "integer":
-        valid_numbers = set(range(1, limit_value + 1))
-    # Add other limit modes here if implemented
+    valid_numbers = _generate_valid_numbers(limit_value, limit_mode)
 
     if not valid_numbers:
         return []
