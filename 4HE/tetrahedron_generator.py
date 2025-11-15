@@ -3,7 +3,7 @@ import numpy as np
 import scipy.signal
 from itertools import combinations_with_replacement
 from fractions import Fraction
-from theory.calculations import get_odd_limit, _generate_valid_numbers
+from theory.calculations import get_odd_limit, _generate_valid_numbers, calculate_complexity
 
 def cents(x):
     """Converts a ratio to cents."""
@@ -109,10 +109,10 @@ def generate_tetrahedron_data(equave_ratio, resolution):
     # Return the grids in the correct (c1, c2, c3) order for the widget
     return c1_grid, c2_grid, c3_grid, entropy
 
-def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd"):
+def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney"):
     """
     Generates a list of 4-note chords based on an odd limit.
-    Returns points as (c1, c2, c3, intervallic_odd_limit).
+    Returns points as (c1, c2, c3, complexity).
     """
     points = []
     equave_ratio_float = float(equave_ratio)
@@ -148,14 +148,13 @@ def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd"):
         c2 = cents(k / j)
         c3 = cents(l / k)
         
-        # Calculate simplicity as the intervallic odd limit (only for odd limit mode)
-        if limit_mode == "odd":
-            s = max(get_odd_limit(Fraction(j, i)),
-                    get_odd_limit(Fraction(k, j)),
-                    get_odd_limit(Fraction(l, k)))
-        else: # For integer limit, use sum of integers as simplicity
-            s = i + j + k + l
+        # Calculate complexity
+        complexity = max(
+            calculate_complexity(complexity_measure, Fraction(j, i)),
+            calculate_complexity(complexity_measure, Fraction(k, j)),
+            calculate_complexity(complexity_measure, Fraction(l, k))
+        )
         
-        points.append((c1, c2, c3, s))
+        points.append((c1, c2, c3, complexity))
         
     return points

@@ -51,18 +51,34 @@ class FourHEWindow(QMainWindow):
         # View Mode Dropdown
         self.view_mode_combo = QComboBox()
         self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
+        self.view_mode_combo.currentTextChanged.connect(self.toggle_odd_limit_visibility)
         control_layout.addWidget(self.view_mode_combo)
 
         # Limit Mode Dropdown
-        limit_mode_layout = QHBoxLayout()
+        self.limit_mode_layout_widget = QWidget()
+        limit_mode_layout = QHBoxLayout(self.limit_mode_layout_widget)
+        limit_mode_layout.setContentsMargins(0,0,0,0)
         limit_mode_label = QLabel("Limit Mode:")
         self.limit_mode_combo = QComboBox()
-        self.limit_mode_combo.addItems(["Odd Limit", "Integer Limit"]) # Add "Prime Limit" later if needed
+        self.limit_mode_combo.addItems(["Odd Limit", "Integer Limit"])
         self.limit_mode_combo.currentTextChanged.connect(self._update_limit_mode)
         limit_mode_layout.addWidget(limit_mode_label)
         limit_mode_layout.addWidget(self.limit_mode_combo)
-        control_layout.addLayout(limit_mode_layout)
-        self.limit_mode = "odd" # Initialize attribute
+        control_layout.addWidget(self.limit_mode_layout_widget)
+        self.limit_mode = "odd"
+
+        # Complexity Measures Dropdown
+        self.complexity_widget = QWidget()
+        complexity_layout = QHBoxLayout(self.complexity_widget)
+        complexity_layout.setContentsMargins(0,0,0,0)
+        complexity_label = QLabel("Complexity Measures:")
+        self.complexity_combo = QComboBox()
+        self.complexity_combo.addItems(["Tenney", "Weil", "Wilson", "Gradus"])
+        self.complexity_combo.currentTextChanged.connect(self._update_complexity_measure)
+        complexity_layout.addWidget(complexity_label)
+        complexity_layout.addWidget(self.complexity_combo)
+        control_layout.addWidget(self.complexity_widget)
+        self.complexity_measure = "Tenney"
 
         # Odd Limit
         self.odd_limit_layout_widget = QWidget()
@@ -74,21 +90,7 @@ class FourHEWindow(QMainWindow):
         self.odd_limit_layout.addWidget(self.odd_limit_input)
         control_layout.addWidget(self.odd_limit_layout_widget)
 
-        # Font Size Multiplier
-        self.font_size_multiplier_widget = QWidget() # New QWidget to hold the layout
-        self.font_size_multiplier_layout = QHBoxLayout(self.font_size_multiplier_widget)
-        self.font_size_multiplier_layout.setContentsMargins(0,0,0,0) # Remove margins for the inner layout
-        font_size_label = QLabel("Font Size Multiplier:")
-        self.font_size_multiplier_input = QLineEdit("3") # Default value
-        self.font_size_multiplier_input.textChanged.connect(self._update_font_size_multiplier)
-        self.font_size_multiplier_layout.addWidget(font_size_label)
-        self.font_size_multiplier_layout.addWidget(self.font_size_multiplier_input)
-        control_layout.addWidget(self.font_size_multiplier_widget) # Add the widget to the control layout
-        self.font_size_multiplier = 3.0 # Initialize attribute, default to 3.0
-
-        # Toggle visibility of odd-limit based on view mode
-        self.view_mode_combo.currentTextChanged.connect(self.toggle_odd_limit_visibility)
-        self.toggle_odd_limit_visibility("Volume Data") # Initial state
+        self.toggle_odd_limit_visibility("Volume Data")
 
         # Update Button
         self.update_button = QPushButton("Update Visualization")
@@ -108,22 +110,17 @@ class FourHEWindow(QMainWindow):
         elif text == "Integer Limit":
             self.limit_mode = "integer"
             self.odd_limit_input.setToolTip("Integer-Limit must be an integer >= 1.")
-        # Add other limit modes here if implemented
-        self.update_visualization() # Update visualization when limit mode changes
+        self.update_visualization()
+
+    def _update_complexity_measure(self, text):
+        self.complexity_measure = text
+        self.update_visualization()
 
     def toggle_odd_limit_visibility(self, view_mode):
-        """Shows or hides the Odd-Limit input and Font Size Multiplier based on the selected view mode."""
         is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
+        self.limit_mode_layout_widget.setVisible(is_scatter_or_labels)
+        self.complexity_widget.setVisible(is_scatter_or_labels)
         self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
-        self.font_size_multiplier_widget.setVisible(is_scatter_or_labels) # Show/hide multiplier widget
-        self.limit_mode_combo.setVisible(is_scatter_or_labels) # Show/hide limit mode combo
-
-    def _update_font_size_multiplier(self, text):
-        try:
-            self.font_size_multiplier = float(text)
-        except ValueError:
-            self.font_size_multiplier = 3.0 # Revert to default on invalid input
-        self.update_visualization() # Update visualization when multiplier changes
 
     def update_visualization(self):
         try:
@@ -137,7 +134,7 @@ class FourHEWindow(QMainWindow):
             show_labels = (view_mode == "Labels")
             
             limit_value = 0
-            current_limit_mode = self.limit_mode # Get the selected limit mode
+            current_limit_mode = self.limit_mode
             
             if show_points or show_labels:
                 limit_value = int(self.odd_limit_input.text())
@@ -147,7 +144,6 @@ class FourHEWindow(QMainWindow):
                 elif current_limit_mode == "integer":
                     if limit_value < 1:
                         raise ValueError("Integer-Limit must be an integer >= 1.")
-                # Add validation for other limit modes here
 
         except ValueError as e:
             QMessageBox.warning(self, "Invalid Input", str(e))
@@ -161,7 +157,7 @@ class FourHEWindow(QMainWindow):
         QApplication.processEvents()
 
         volume_data = None
-        if show_volume: # Only generate volume data if needed
+        if show_volume:
             volume_data = generate_tetrahedron_data(equave_ratio, resolution)
             if volume_data is None or volume_data[3] is None:
                 QMessageBox.warning(self, "Generation Error", "Could not generate HE data for coordinate system.")
@@ -173,20 +169,19 @@ class FourHEWindow(QMainWindow):
 
         points_data = None
         if show_points:
-            points_data = generate_odd_limit_points(limit_value, equave_ratio, limit_mode=current_limit_mode)
+            points_data = generate_odd_limit_points(limit_value, equave_ratio, limit_mode=current_limit_mode, complexity_measure=self.complexity_measure)
 
         labels_data = None
         if show_labels:
-            labels_data = generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode=current_limit_mode)
+            labels_data = generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode=current_limit_mode, complexity_measure=self.complexity_measure)
 
         self.tetra_widget.update_tetrahedron(
             volume_data=volume_data, 
             points_data=points_data,
-            labels_data=labels_data, # Pass labels_data
+            labels_data=labels_data,
             show_volume=show_volume,
             show_points=show_points,
-            show_labels=show_labels, # Pass show_labels
-            font_size_multiplier=self.font_size_multiplier # Pass font_size_multiplier
+            show_labels=show_labels,
         )
         
         progress.setValue(100)

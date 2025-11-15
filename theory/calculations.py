@@ -89,26 +89,70 @@ def get_integer_limit(ratio):
     except (ValueError, ZeroDivisionError):
         return 1
 
+def get_prime_factorization(n):
+    factors = []
+    d = 2
+    while d * d <= n:
+        while (n % d) == 0:
+            factors.append(d)
+            n //= d
+        d += 1
+    if n > 1:
+       factors.append(n)
+    return factors
+
+def tenney_norm(ratio):
+    ratio = Fraction(ratio).limit_denominator(10000)
+    return math.log2(ratio.numerator * ratio.denominator)
+
+def weil_norm(ratio):
+    ratio = Fraction(ratio).limit_denominator(10000)
+    return math.log2(max(ratio.numerator, ratio.denominator))
+
+def wilson_norm(ratio):
+    ratio = Fraction(ratio).limit_denominator(10000)
+    factors_n = get_prime_factorization(ratio.numerator)
+    factors_d = get_prime_factorization(ratio.denominator)
+    return sum(factors_n) + sum(factors_d)
+
+def gradus_norm(ratio):
+    ratio = Fraction(ratio).limit_denominator(10000)
+    factors_n = get_prime_factorization(ratio.numerator)
+    factors_d = get_prime_factorization(ratio.denominator)
+    s = sum(factors_n) + sum(factors_d)
+    n = len(factors_n) + len(factors_d)
+    return s - n + 1
+
+def calculate_complexity(complexity_measure, ratio):
+    if complexity_measure == "Tenney":
+        return tenney_norm(ratio)
+    elif complexity_measure == "Weil":
+        return weil_norm(ratio)
+    elif complexity_measure == "Wilson":
+        return wilson_norm(ratio)
+    elif complexity_measure == "Gradus":
+        return gradus_norm(ratio)
+    else:
+        return 0
+
 def _generate_valid_numbers(limit_value, limit_mode):
     """
     Generates a set of valid numbers based on the limit mode.
     """
     valid_numbers = set()
     if limit_mode == "odd":
-        # Heuristic for max number to check.
-        max_num_to_check = max(limit_value * 2, 100) # A reasonable heuristic
+        max_num_to_check = max(limit_value * 2, 100)
         for num in range(1, max_num_to_check + 1):
             if get_odd_part_of_number(num) <= limit_value:
                 valid_numbers.add(num)
     elif limit_mode == "integer":
         valid_numbers = set(range(1, limit_value + 1))
-    # Add other limit modes here if implemented
     return valid_numbers
 
-def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", prime_limit=7, max_exponent=4):
+def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney"):
     """
     Generates a list of 4-note JI chords (labels) and their 3D coordinates (c1, c2, c3)
-    and simplicity for the tetrahedron.
+    and complexity for the tetrahedron.
     """
     labels_data = []
     equave_ratio_float = float(equave_ratio)
@@ -120,41 +164,33 @@ def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", prime_
 
     sorted_valid_numbers = sorted(list(valid_numbers))
     
-    # Find all unique combinations of 4 valid numbers
     for combo in combinations_with_replacement(sorted_valid_numbers, 4):
         i, j, k, l = combo
         
-        # Ensure the chord is within the equave
         if l / i > equave_ratio_float:
             continue
             
-        # Ensure the components are coprime
         if gcd(gcd(gcd(i, j), k), l) != 1:
             continue
 
-        # Ensure the odd limit of all intervals is within the limit_value (only for odd limit mode)
         if limit_mode == "odd":
             if (get_odd_limit(Fraction(j, i)) > limit_value or
                 get_odd_limit(Fraction(k, j)) > limit_value or
                 get_odd_limit(Fraction(l, k)) > limit_value):
                 continue
             
-        # Calculate interval cents
         c1 = cents(j / i)
         c2 = cents(k / j)
         c3 = cents(l / k)
         
-        # Calculate simplicity
-        if limit_mode == "odd":
-            simplicity = max(get_odd_limit(Fraction(j, i)),
-                             get_odd_limit(Fraction(k, j)),
-                             get_odd_limit(Fraction(l, k)))
-        else: # For integer limit, use sum of integers as simplicity
-            simplicity = i + j + k + l
+        complexity = max(
+            calculate_complexity(complexity_measure, Fraction(j, i)),
+            calculate_complexity(complexity_measure, Fraction(k, j)),
+            calculate_complexity(complexity_measure, Fraction(l, k))
+        )
         
-        # Format label
         label = f"{i}:{j}:{k}:{l}"
         
-        labels_data.append(((c1, c2, c3), label, simplicity))
+        labels_data.append(((c1, c2, c3), label, complexity))
         
     return labels_data
