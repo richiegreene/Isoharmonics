@@ -2,7 +2,7 @@ import sys
 import os
 from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, QHBoxLayout,
                              QLabel, QLineEdit, QPushButton, QDockWidget, QSpinBox,
-                             QMessageBox, QProgressDialog, QComboBox)
+                             QMessageBox, QProgressDialog, QComboBox, QCheckBox)
 from PyQt5.QtCore import Qt
 
 # Add the 'Isoharmonics' directory to the Python path
@@ -37,8 +37,16 @@ class FourHEWindow(QMainWindow):
         equave_layout.addWidget(self.equave_input)
         control_layout.addLayout(equave_layout)
 
+        # View Mode Dropdown
+        self.view_mode_combo = QComboBox()
+        self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
+        self.view_mode_combo.currentTextChanged.connect(self._update_visibility)
+        control_layout.addWidget(self.view_mode_combo)
+
         # Resolution
-        res_layout = QHBoxLayout()
+        self.resolution_widget = QWidget()
+        res_layout = QHBoxLayout(self.resolution_widget)
+        res_layout.setContentsMargins(0,0,0,0)
         res_label = QLabel("Resolution:")
         self.resolution_input = QSpinBox()
         self.resolution_input.setRange(10, 300)
@@ -46,13 +54,7 @@ class FourHEWindow(QMainWindow):
         self.resolution_input.setToolTip("Higher values increase detail but require much more computation time.")
         res_layout.addWidget(res_label)
         res_layout.addWidget(self.resolution_input)
-        control_layout.addLayout(res_layout)
-
-        # View Mode Dropdown
-        self.view_mode_combo = QComboBox()
-        self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
-        self.view_mode_combo.currentTextChanged.connect(self.toggle_odd_limit_visibility)
-        control_layout.addWidget(self.view_mode_combo)
+        control_layout.addWidget(self.resolution_widget)
 
         # Limit Mode Dropdown
         self.limit_mode_layout_widget = QWidget()
@@ -100,14 +102,24 @@ class FourHEWindow(QMainWindow):
         size_layout.addWidget(self.size_input)
         control_layout.addWidget(self.size_widget)
 
-        self.toggle_odd_limit_visibility("Volume Data")
+        # Omission Checkboxes
+        self.omissions_widget = QWidget()
+        omissions_layout = QHBoxLayout(self.omissions_widget)
+        omissions_layout.setContentsMargins(0,0,0,0)
+        self.omit_unisons_checkbox = QCheckBox("Omit Unisons")
+        self.omit_octaves_checkbox = QCheckBox("Omit Octaves")
+        omissions_layout.addWidget(self.omit_unisons_checkbox)
+        omissions_layout.addWidget(self.omit_octaves_checkbox)
+        control_layout.addWidget(self.omissions_widget)
+
+        self._update_visibility("Volume Data")
+
+        control_layout.addStretch()
 
         # Render Button
         self.render_button = QPushButton("Render")
         self.render_button.clicked.connect(self.update_visualization)
         control_layout.addWidget(self.render_button)
-
-        control_layout.addStretch()
 
         dock_widget = QDockWidget("Controls", self)
         dock_widget.setWidget(control_widget)
@@ -126,12 +138,16 @@ class FourHEWindow(QMainWindow):
         self.complexity_measure = text
         self.update_visualization()
 
-    def toggle_odd_limit_visibility(self, view_mode):
+    def _update_visibility(self, view_mode):
+        is_volume = (view_mode == "Volume Data")
         is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
+
+        self.resolution_widget.setVisible(is_volume)
         self.limit_mode_layout_widget.setVisible(is_scatter_or_labels)
         self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
         self.complexity_widget.setVisible(is_scatter_or_labels)
         self.size_widget.setVisible(is_scatter_or_labels)
+        self.omissions_widget.setVisible(is_scatter_or_labels)
 
     def update_visualization(self):
         try:
@@ -147,10 +163,14 @@ class FourHEWindow(QMainWindow):
             limit_value = 0
             current_limit_mode = self.limit_mode
             universal_scale = 1.0
+            omit_unisons = False
+            omit_octaves = False
             
             if show_points or show_labels:
                 limit_value = int(self.odd_limit_input.text())
                 universal_scale = float(self.size_input.text())
+                omit_unisons = self.omit_unisons_checkbox.isChecked()
+                omit_octaves = self.omit_octaves_checkbox.isChecked()
                 if current_limit_mode == "odd":
                     if limit_value < 3 or limit_value % 2 == 0:
                         raise ValueError("Odd-Limit must be an odd number >= 3.")
@@ -182,11 +202,23 @@ class FourHEWindow(QMainWindow):
 
         points_data = None
         if show_points:
-            points_data = generate_odd_limit_points(limit_value, equave_ratio, limit_mode=current_limit_mode, complexity_measure=self.complexity_measure)
+            points_data = generate_odd_limit_points(
+                limit_value, equave_ratio, 
+                limit_mode=current_limit_mode, 
+                complexity_measure=self.complexity_measure,
+                hide_unison_voices=omit_unisons,
+                omit_octaves=omit_octaves
+            )
 
         labels_data = None
         if show_labels:
-            labels_data = generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode=current_limit_mode, complexity_measure=self.complexity_measure)
+            labels_data = generate_ji_tetra_labels(
+                limit_value, equave_ratio, 
+                limit_mode=current_limit_mode, 
+                complexity_measure=self.complexity_measure,
+                hide_unison_voices=omit_unisons,
+                omit_octaves=omit_octaves
+            )
 
         self.tetra_widget.update_tetrahedron(
             volume_data=volume_data, 

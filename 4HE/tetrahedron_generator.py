@@ -109,7 +109,7 @@ def generate_tetrahedron_data(equave_ratio, resolution):
     # Return the grids in the correct (c1, c2, c3) order for the widget
     return c1_grid, c2_grid, c3_grid, entropy
 
-def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney"):
+def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney", hide_unison_voices=False, omit_octaves=False):
     """
     Generates a list of 4-note chords based on an odd limit.
     Returns points as (c1, c2, c3, complexity).
@@ -126,6 +126,21 @@ def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd", compl
     
     # Find all unique combinations of 4 valid numbers
     for combo in combinations_with_replacement(sorted_valid_numbers, 4):
+        if hide_unison_voices and len(set(combo)) < 4:
+            continue
+
+        if omit_octaves:
+            has_octave = False
+            for i in range(len(combo)):
+                for j in range(i + 1, len(combo)):
+                    if combo[j] == combo[i] * 2:
+                        has_octave = True
+                        break
+                if has_octave:
+                    break
+            if has_octave:
+                continue
+
         i, j, k, l = combo
         
         # Ensure the chord is within the equave

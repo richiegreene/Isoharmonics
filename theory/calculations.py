@@ -149,7 +149,7 @@ def _generate_valid_numbers(limit_value, limit_mode):
         valid_numbers = set(range(1, limit_value + 1))
     return valid_numbers
 
-def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney"):
+def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney", hide_unison_voices=False, omit_octaves=False):
     """
     Generates a list of 4-note JI chords (labels) and their 3D coordinates (c1, c2, c3)
     and complexity for the tetrahedron.
@@ -165,6 +165,21 @@ def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", comple
     sorted_valid_numbers = sorted(list(valid_numbers))
     
     for combo in combinations_with_replacement(sorted_valid_numbers, 4):
+        if hide_unison_voices and len(set(combo)) < 4:
+            continue
+
+        if omit_octaves:
+            has_octave = False
+            for i in range(len(combo)):
+                for j in range(i + 1, len(combo)):
+                    if combo[j] == combo[i] * 2:
+                        has_octave = True
+                        break
+                if has_octave:
+                    break
+            if has_octave:
+                continue
+
         i, j, k, l = combo
         
         if l / i > equave_ratio_float:
