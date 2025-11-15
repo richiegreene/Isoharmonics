@@ -8,38 +8,63 @@ let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
+// Inferno Colormap function
+function infernoColormap(value) {
+    // Value is expected to be between 0 and 1
+    // This is a simplified approximation of the inferno colormap
+    // For a more accurate version, a lookup table or more complex math would be needed.
+    // This version transitions from dark (low complexity) to bright yellow (high complexity)
+    const r = Math.pow(value, 0.5) * 0.8 + 0.2;
+    const g = Math.pow(value, 1.5) * 0.7 + 0.1;
+    const b = Math.pow(value, 2.5) * 0.6;
+    return { r: r, g: g, b: b };
+}
+
+// Create a circular texture for points
+function createCircleTexture() {
+    const canvas = document.createElement('canvas');
+    canvas.width = 64;
+    canvas.height = 64;
+    const context = canvas.getContext('2d');
+    context.beginPath();
+    context.arc(32, 32, 30, 0, Math.PI * 2, false);
+    context.fillStyle = 'white';
+    context.fill();
+    return new THREE.CanvasTexture(canvas);
+}
+const circleTexture = createCircleTexture();
+
 // --- HELPER FUNCTIONS ---
 function makeTextSprite(message, parameters) {
     if ( parameters === undefined ) parameters = {};
     const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
-    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 50;
-    const borderThickness = parameters.hasOwnProperty("borderThickness") ? parameters["borderThickness"] : 4;
-    const borderColor = parameters.hasOwnProperty("borderColor") ? parameters["borderColor"] : { r:0, g:0, b:0, a:1.0 };
-    const backgroundColor = parameters.hasOwnProperty("backgroundColor") ? parameters["backgroundColor"] : { r:255, g:255, b:255, a:0.0 };
+    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 100; // Fixed high fontsize for resolution
+    const borderThickness = 0; // No border
     const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
 
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d');
-    context.font = "Bold " + fontsize + "px " + fontface;
+    context.font = fontsize + "px " + fontface; // Removed "Bold "
     
     const metrics = context.measureText( message );
     const textWidth = metrics.width;
 
-    context.fillStyle   = "rgba(" + backgroundColor.r + "," + backgroundColor.g + "," + backgroundColor.b + "," + backgroundColor.a + ")";
-    context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + "," + borderColor.b + "," + borderColor.a + ")";
+    canvas.width = textWidth + borderThickness * 2;
+    canvas.height = fontsize * 1.4 + borderThickness * 2;
 
-    context.lineWidth = borderThickness;
-    roundRect(context, borderThickness/2, borderThickness/2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
+    context.font = fontsize + "px " + fontface; // Removed "Bold "
+    context.textAlign = "center";
+    context.textBaseline = "middle";
 
     context.fillStyle = "rgba(" + textColor.r + ", " + textColor.g + ", " + textColor.b + ", 1.0)";
-    context.fillText( message, borderThickness, fontsize + borderThickness);
+    context.fillText( message, canvas.width / 2, canvas.height / 2);
 
     const texture = new THREE.Texture(canvas) 
     texture.needsUpdate = true;
 
     const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
     const sprite = new THREE.Sprite( spriteMaterial );
-    sprite.scale.set(1.0 * textWidth/fontsize, 1.4 * fontsize/fontsize, 1.0);
+    sprite.scale.set(canvas.width / fontsize * 0.1, canvas.height / fontsize * 0.1, 1.0); // Adjust scale based on canvas size
     return sprite;  
 }
 
@@ -61,6 +86,12 @@ function roundRect(ctx, x, y, w, h, r) {
 
 // --- CORE THREE.JS FUNCTIONS ---
 function initThreeJS() {
+    const container = document.getElementById('container');
+    // Remove any existing canvas from the container
+    while (container.firstChild) {
+        container.removeChild(container.firstChild);
+    }
+
     scene = new THREE.Scene();
     scene.background = new THREE.Color(0x222222);
 
@@ -71,7 +102,7 @@ function initThreeJS() {
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    document.getElementById('container').appendChild(renderer.domElement);
+    container.appendChild(renderer.domElement); // Use the container variable
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
@@ -97,8 +128,19 @@ function animate() {
     if (currentLayoutDisplay === 'labels') {
         currentSprites.forEach(sprite => {
             const distance = camera.position.distanceTo(sprite.position);
-            const spriteSize = 0.5; // Base size for the sprite on screen
-            sprite.scale.set(spriteSize * distance, spriteSize * distance, 1);
+            let currentSpriteSize = 0.5; // Default base screen size for sprite
+
+            if (sprite.userData.enableSize) {
+                // Calculate sprite size based on complexity, baseSize, and scalingFactor
+                const baseScreenSize = sprite.userData.baseSize * 10; // Adjust multiplier as needed for visual size
+                const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
+                currentSpriteSize = Math.max(baseScreenSize, scaledSize); // Ensure minimum size
+            } else {
+                currentSpriteSize = sprite.userData.baseSize * 10; // Uniform size based on baseSize
+            }
+            
+            // Scale sprite to maintain constant screen size
+            sprite.scale.set(currentSpriteSize * distance, currentSpriteSize * distance, 1);
         });
     }
 
@@ -119,12 +161,12 @@ function transformToRegularTetrahedron(c1, c2, c3, max_val) {
     const h_apex = L * Math.sqrt(2/3); // Height of a regular tetrahedron
     const r_base = L * Math.sqrt(3)/3; // Distance from center of base to a vertex
 
-    // Vertices of a regular tetrahedron (apex up, base centered on XY plane)
+    // Vertices of a regular tetrahedron (apex up, base centered on XY plane):
     // Apex: (0,0,h_apex)
     // Base vertices (equilateral triangle in XY plane):
     // T_base1: (r_base, 0, 0)
-    // T_base2: (r_base * cos(2*Math.PI/3), r_base * sin(2*Math.PI/3), 0)
-    // T_base3: (r_base * cos(4*Math.PI/3), r_base * sin(4*Math.PI/3), 0)
+    // T_base2: (r_base * Math.cos(2*Math.PI/3), r_base * Math.sin(2*Math.PI/3), 0)
+    // T_base3: (r_base * Math.cos(4*Math.PI/3), r_base * Math.sin(4*Math.PI/3), 0)
     
     const T_apex = new THREE.Vector3(0, 0, h_apex);
     const T_base1 = new THREE.Vector3(r_base, 0, 0); 
@@ -153,7 +195,7 @@ function transformToRegularTetrahedron(c1, c2, c3, max_val) {
 }
 
 // --- TETRAHEDRON DATA GENERATION AND RENDERING ---
-async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves, point_size, scaling_factor, enable_size, enable_color, layout_display) {
+async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves, base_size, scaling_factor, enable_size, enable_color, layout_display) {
     if (!python_ready) {
         console.warn("Python environment not ready yet.");
         return;
@@ -235,33 +277,50 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
         let normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
         
-        // Apply scaling factor to complexity if enabled
-        if (enable_color) {
-            normalizedComplexity = normalizedComplexity * scaling_factor;
-            normalizedComplexity = Math.min(1, Math.max(0, normalizedComplexity)); // Clamp between 0 and 1
-        }
+        let displayColor = new THREE.Color();
+        let spriteTextColor = { r:255, g:255, b:255, a:1.0 }; // Default white
 
-        color.setHSL( (1 - normalizedComplexity) * 0.35, 1, 0.5 ); // Green to Red HSL
-        colors.push(color.r, color.g, color.b);
+        if (enable_color) {
+            // Apply scaling factor to complexity if enabled
+            let scaledComplexity = normalizedComplexity * scaling_factor;
+            scaledComplexity = Math.min(1, Math.max(0, scaledComplexity)); // Clamp between 0 and 1
+            
+            const infernoColor = infernoColormap(scaledComplexity);
+            displayColor.setRGB(infernoColor.r, infernoColor.g, infernoColor.b);
+            spriteTextColor = { r: infernoColor.r * 255, g: infernoColor.g * 255, b: infernoColor.b * 255, a:1.0 };
+        } else {
+            displayColor.setRGB(1, 1, 1); // White
+        }
+        colors.push(displayColor.r, displayColor.g, displayColor.b);
 
         // Add labels
         const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
         const label_text = labels_map.get(coords_key);
         if (label_text && layout_display === 'labels') {
-            const sprite = makeTextSprite(label_text, { fontsize: 30, textColor: { r:255, g:255, b:255, a:1.0 } });
+            const sprite = makeTextSprite(label_text, { textColor: spriteTextColor }); // fontsize is now fixed in makeTextSprite
             sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z); // Offset slightly from the point
-            // Initial scale, will be adjusted in animate loop
-            sprite.scale.set(0.2, 0.1, 1); 
+            // Store properties for dynamic scaling in animate loop
+            sprite.userData.normalizedComplexity = normalizedComplexity;
+            sprite.userData.baseSize = base_size;
+            sprite.userData.scalingFactor = scaling_factor;
+            sprite.userData.enableSize = enable_size;
             scene.add(sprite);
             currentSprites.push(sprite); // Add to array for dynamic scaling
         }
     });
 
     if (layout_display === 'points') {
-        let finalPointSize = point_size;
+        let finalPointSize = base_size;
+        let finalOpacity = 0.7;
+
         if (enable_size) {
             // Apply scaling factor to point size
-            finalPointSize = point_size * scaling_factor;
+            // Compromise: all points scaled by scaling_factor, not individually by complexity
+            finalPointSize = base_size * scaling_factor;
+        }
+        
+        if (!enable_color) {
+            finalOpacity = 0.7; // Slightly translucent white
         }
 
         const geometry = new THREE.BufferGeometry();
@@ -272,8 +331,10 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             size: finalPointSize,
             vertexColors: true,
             transparent: true,
-            opacity: 0.7,
-            sizeAttenuation: false // Crucial for fixed screen size points
+            opacity: finalOpacity,
+            sizeAttenuation: false, // Crucial for fixed screen size points
+            map: circleTexture, // Use circular texture
+            alphaTest: 0.1 // To help with transparency and "corners"
         });
 
         const points = new THREE.Points(geometry, material);
@@ -801,7 +862,7 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     const default_complexity_method = "Tenney"; // Default complexity method
     const default_hide_unison_voices = false;
     const default_omit_octaves = false;
-    const default_point_size = parseFloat(document.getElementById('pointSize').value);
+    const default_base_size = parseFloat(document.getElementById('baseSize').value);
     const default_scaling_factor = parseFloat(document.getElementById('scalingFactor').value);
     const default_enable_size = document.getElementById('enableSize').checked;
     const default_enable_color = document.getElementById('enableColor').checked;
@@ -814,7 +875,7 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         default_complexity_method, 
         default_hide_unison_voices, 
         default_omit_octaves,
-        default_point_size,
+        default_base_size, // Changed from point_size
         default_scaling_factor,
         default_enable_size,
         default_enable_color,
@@ -827,29 +888,29 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         const equaveRatio = parseFloat(document.getElementById('equaveRatio').value);
         const complexityMethod = document.getElementById('complexityMethod').value;
         const hideUnisonVoices = document.getElementById('hideUnisonVoices').checked;
-        const omitOctaves = document.getElementById('omitOctaves').checked;
-        const pointSize = parseFloat(document.getElementById('pointSize').value);
+        const omitOctaves = parseFloat(document.getElementById('omitOctaves').value);
+        const baseSize = parseFloat(document.getElementById('baseSize').value); // Changed from pointSize
         const scalingFactor = parseFloat(document.getElementById('scalingFactor').value);
         const enableSize = document.getElementById('enableSize').checked;
         const enableColor = document.getElementById('enableColor').checked;
         const layoutDisplay = document.getElementById('layoutDisplay').value;
         currentLayoutDisplay = layoutDisplay; // Set global variable
 
-        if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(pointSize) && !isNaN(scalingFactor)) {
+        if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(baseSize) && !isNaN(scalingFactor)) { // Changed from pointSize
             await updateTetrahedron(
                 limitValue, 
                 equaveRatio, 
                 complexityMethod, 
                 hideUnisonVoices, 
                 omitOctaves,
-                pointSize,
+                baseSize, // Changed from point_size
                 scalingFactor,
                 enableSize,
                 enableColor,
                 layoutDisplay
             );
         } else {
-            console.error("Invalid input for limit value, equave ratio, point size, or scaling factor.");
+            console.error("Invalid input for limit value, equave ratio, base size, or scaling factor."); // Changed from point size
         }
     });
 }
