@@ -41,14 +41,16 @@ class TetrahedronWidget(gl.GLViewWidget):
         M = np.array([[1, 0.5, 0.5], [0, np.sqrt(3)/2, np.sqrt(3)/6], [0, 0, np.sqrt(6)/3]])
         M4x4 = np.eye(4); M4x4[:3, :3] = M
         tetra_transform = Transform3D(M4x4)
-        center_of_mass = np.array([0.5, np.sqrt(3)/6, np.sqrt(6)/12])
-        translate_transform = Transform3D(); translate_transform.translate(-center_of_mass[0], -center_of_mass[1], -center_of_mass[2])
+
+        # Set camera center to the tetrahedron's geometric center
+        center_qvector = tetra_transform.map(QVector3D(0.5, 0.5, 0.5))
+        self.opts['center'] = center_qvector
 
         if show_volume and volume_data:
             x_grid, y_grid, z_grid, entropy = volume_data
             res = entropy.shape[0]
             scale_transform = Transform3D(); scale_transform.scale(1.0/res, 1.0/res, 1.0/res)
-            volume_transform = translate_transform * tetra_transform * scale_transform
+            volume_transform = tetra_transform * scale_transform
             min_e, max_e = np.nanmin(entropy), np.nanmax(entropy)
             norm_entropy = (entropy - min_e) / (max_e - min_e) if max_e > min_e else np.zeros_like(entropy)
             cmap = pyqtgraph.colormap.get('viridis')
@@ -60,7 +62,6 @@ class TetrahedronWidget(gl.GLViewWidget):
             self.addItem(self.volume_item)
 
         if show_points and points_data:
-            scatter_transform = translate_transform * tetra_transform
             points = np.array(points_data)
             if len(points) > 0:
                 coords = points[:, :3]
@@ -76,11 +77,10 @@ class TetrahedronWidget(gl.GLViewWidget):
                 sizes = ((norm_c * 10) + 5) * universal_scale
 
                 self.scatter_item = gl.GLScatterPlotItem(pos=norm_coords, size=sizes, color=(1,1,1,0.8), pxMode=True)
-                self.scatter_item.setTransform(scatter_transform)
+                self.scatter_item.setTransform(tetra_transform)
                 self.addItem(self.scatter_item)
 
         if show_labels and labels_data:
-            labels_transform = translate_transform * tetra_transform
             complexities = np.array([item[2] for item in labels_data])
             min_c, max_c = complexities.min(), complexities.max()
 
@@ -91,7 +91,7 @@ class TetrahedronWidget(gl.GLViewWidget):
 
                 temp_pos = np.array([norm_c1, norm_c2, norm_c3])
                 temp_pos_qvector = QVector3D(float(temp_pos[0]), float(temp_pos[1]), float(temp_pos[2]))
-                transformed_pos_qvector = labels_transform.map(temp_pos_qvector)
+                transformed_pos_qvector = tetra_transform.map(temp_pos_qvector)
                 transformed_pos_np = np.array([transformed_pos_qvector.x(), transformed_pos_qvector.y(), transformed_pos_qvector.z() + 0.5])
 
                 if max_c > min_c:

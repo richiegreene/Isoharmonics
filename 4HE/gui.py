@@ -39,7 +39,7 @@ class FourHEWindow(QMainWindow):
 
         # View Mode Dropdown
         self.view_mode_combo = QComboBox()
-        self.view_mode_combo.addItems(["Volume Data", "Scatter Plot", "Labels"])
+        self.view_mode_combo.addItems(["Scatter Plot", "Labels", "Volume Data"])
         self.view_mode_combo.currentTextChanged.connect(self._update_visibility)
         control_layout.addWidget(self.view_mode_combo)
 
@@ -112,7 +112,8 @@ class FourHEWindow(QMainWindow):
         omissions_layout.addWidget(self.omit_octaves_checkbox)
         control_layout.addWidget(self.omissions_widget)
 
-        self._update_visibility("Volume Data")
+        self._update_visibility("Scatter Plot")
+        self.view_mode_combo.setCurrentIndex(0)
 
         control_layout.addStretch()
 
