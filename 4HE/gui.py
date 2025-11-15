@@ -5,9 +5,6 @@ from PyQt5.QtWidgets import (QMainWindow, QApplication, QWidget, QVBoxLayout, QH
                              QMessageBox, QProgressDialog, QComboBox, QCheckBox)
 from PyQt5.QtCore import Qt
 
-# Add the 'Isoharmonics' directory to the Python path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-
 from tetrahedron_generator import generate_tetrahedron_data, generate_odd_limit_points
 from widgets.tetrahedron_widget import TetrahedronWidget
 from theory.calculations import generate_ji_tetra_labels
