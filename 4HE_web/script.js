@@ -6,6 +6,251 @@ let pyodide;
 let loadingOverlay = document.getElementById('loading-overlay');
 let python_ready = false;
 
+// --- HELPER FUNCTIONS ---
+function makeTextSprite(message, parameters) {
+    if ( parameters === undefined ) parameters = {};
+    const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
+    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 50;
+    const borderThickness = parameters.hasOwnProperty("borderThickness") ? parameters["borderThickness"] : 4;
+    const borderColor = parameters.hasOwnProperty("borderColor") ? parameters["borderColor"] : { r:0, g:0, b:0, a:1.0 };
+    const backgroundColor = parameters.hasOwnProperty("backgroundColor") ? parameters["backgroundColor"] : { r:255, g:255, b:255, a:0.0 };
+    const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    context.font = "Bold " + fontsize + "px " + fontface;
+    
+    const metrics = context.measureText( message );
+    const textWidth = metrics.width;
+
+    context.fillStyle   = "rgba(" + backgroundColor.r + "," + backgroundColor.g + "," + backgroundColor.b + "," + backgroundColor.a + ")";
+    context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + "," + borderColor.b + "," + borderColor.a + ")";
+
+    context.lineWidth = borderThickness;
+    roundRect(context, borderThickness/2, borderThickness/2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
+
+    context.fillStyle = "rgba(" + textColor.r + ", " + textColor.g + ", " + textColor.b + ", 1.0)";
+    context.fillText( message, borderThickness, fontsize + borderThickness);
+
+    const texture = new THREE.Texture(canvas) 
+    texture.needsUpdate = true;
+
+    const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
+    const sprite = new THREE.Sprite( spriteMaterial );
+    sprite.scale.set(1.0 * textWidth/fontsize, 1.4 * fontsize/fontsize, 1.0);
+    return sprite;  
+}
+
+function roundRect(ctx, x, y, w, h, r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r, y);
+    ctx.lineTo(x+w-r, y);
+    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+    ctx.lineTo(x+w, y+h-r);
+    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+    ctx.lineTo(x+r, y+h);
+    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+    ctx.lineTo(x, y+r);
+    ctx.quadraticCurveTo(x, y, x+r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();   
+}
+
+// --- CORE THREE.JS FUNCTIONS ---
+function initThreeJS() {
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x222222);
+
+    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    // Adjusted camera position for a "bird's eye view" with apex up
+    camera.position.set(0, 8, 15); // x, y, z
+    camera.lookAt(0, 0, 0); // Ensure camera looks at the center of the scene
+
+    renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.getElementById('container').appendChild(renderer.domElement);
+
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.25;
+    controls.screenSpacePanning = false;
+    controls.minDistance = 1;
+    controls.maxDistance = 30; // Allow further zoom out
+
+    window.addEventListener('resize', onWindowResize, false);
+}
+
+function onWindowResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+}
+
+function animate() {
+    requestAnimationFrame(animate);
+    controls.update();
+    renderer.render(scene, camera);
+}
+
+// Transformation function for an apex-up regular tetrahedron
+function transformToRegularTetrahedron(c1, c2, c3, max_val) {
+    // Normalize coordinates to a 0-1 range based on max_val (equave_ratio)
+    const u = c1 / max_val;
+    const v = c2 / max_val;
+    const w = c3 / max_val;
+
+    const side_length = 3.0; // Desired side length of the visual tetrahedron
+    const L = side_length; // Side length of the regular tetrahedron
+
+    // Calculate height and radius for the regular tetrahedron
+    const h_apex = L * Math.sqrt(2/3); // Height of a regular tetrahedron
+    const r_base = L * Math.sqrt(3)/3; // Distance from center of base to a vertex
+
+    // Vertices of a regular tetrahedron (apex up, base centered on XY plane)
+    // Apex: (0,0,h_apex)
+    // Base vertices (equilateral triangle in XY plane):
+    // T_base1: (r_base, 0, 0)
+    // T_base2: (r_base * cos(2*Math.PI/3), r_base * sin(2*Math.PI/3), 0)
+    // T_base3: (r_base * cos(4*Math.PI/3), r_base * sin(4*Math.PI/3), 0)
+    
+    const T_apex = new THREE.Vector3(0, 0, h_apex);
+    const T_base1 = new THREE.Vector3(r_base, 0, 0); 
+    const T_base2 = new THREE.Vector3(r_base * Math.cos(2*Math.PI/3), r_base * Math.sin(2*Math.PI/3), 0);
+    const T_base3 = new THREE.Vector3(r_base * Math.cos(4*Math.PI/3), r_base * Math.sin(4*Math.PI/3), 0);
+
+    // Barycentric mapping: P_transformed = (1-u-v-w)*T_apex + u*T_base1 + v*T_base2 + w*T_base3
+    // This makes (0,0,0) (u=0,v=0,w=0) map to the Apex
+    // and points along the axes (1,0,0), (0,1,0), (0,0,1) map to points on the base.
+    
+    // Calculate barycentric weights for the original simplex corners
+    const a0 = 1 - u - v - w; // Weight for the (0,0,0) corner of the original simplex
+    const a1 = u;             // Weight for the (1,0,0) corner
+    const a2 = v;             // Weight for the (0,1,0) corner
+    const a3 = w;             // Weight for the (0,0,1) corner
+
+    const x_transformed = a0 * T_apex.x + a1 * T_base1.x + a2 * T_base2.x + a3 * T_base3.x;
+    const y_transformed = a0 * T_apex.y + a1 * T_base1.y + a2 * T_base2.y + a3 * T_base3.y;
+    const z_transformed = a0 * T_apex.z + a1 * T_base1.z + a2 * T_base2.z + a3 * T_base3.z;
+    
+    // Offset the entire tetrahedron so its base is near Y=0 or origin for more central viewing
+    // The current Z axis is vertical, so offset Y (vertical in screen space by default)
+    const overall_vertical_offset = -h_apex / 2; 
+
+    return [x_transformed, y_transformed, z_transformed + overall_vertical_offset];
+}
+
+// --- TETRAHEDRON DATA GENERATION AND RENDERING ---
+async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves) {
+    if (!python_ready) {
+        console.warn("Python environment not ready yet.");
+        return;
+    }
+    
+    // Clear previous points and labels
+    while(scene.children.length > 0){ 
+        scene.remove(scene.children[0]); 
+    }
+
+    // Calculate max_cents dynamically based on equave_ratio
+    const max_cents_value = 1200 * Math.log2(equave_ratio);
+
+    // Convert JS booleans to Python string equivalents
+    const py_hide_unison_voices = hide_unison_voices ? "True" : "False";
+    const py_omit_octaves = omit_octaves ? "True" : "False";
+
+    // Call the Python function to get points (c1, c2, c3, complexity)
+    // and labels (c1, c2, c3), label, complexity
+    const points_py_code = `
+        from tetrahedron_generator import generate_odd_limit_points
+        generate_odd_limit_points(
+            limit_value=${limit_value}, 
+            equave_ratio=${equave_ratio}, 
+            limit_mode="odd", 
+            complexity_measure="${complexity_method}", 
+            hide_unison_voices=${py_hide_unison_voices}, 
+            omit_octaves=${py_omit_octaves}
+        )
+    `;
+    const labels_py_code = `
+        from theory.calculations import generate_ji_tetra_labels
+        generate_ji_tetra_labels(
+            limit_value=${limit_value}, 
+            equave_ratio=${equave_ratio}, 
+            limit_mode="odd", 
+            complexity_measure="${complexity_method}", 
+            hide_unison_voices=${py_hide_unison_voices}, 
+            omit_octaves=${py_omit_octaves}
+        )
+    `;
+
+    const raw_points_data = await pyodide.runPythonAsync(points_py_code);
+    const raw_labels_data = await pyodide.runPythonAsync(labels_py_code);
+
+    // Process raw_points_data for Three.js points
+    const positions = [];
+    const colors = [];
+    const color = new THREE.Color();
+
+    let minComplexity = Infinity;
+    let maxComplexity = -Infinity;
+    if (raw_points_data.length > 0) {
+        raw_points_data.forEach(p => {
+            minComplexity = Math.min(minComplexity, p[3]);
+            maxComplexity = Math.max(maxComplexity, p[3]);
+        });
+    }
+
+    // Create a Map for quick lookup of labels by coordinates (before transformation)
+    const labels_map = new Map();
+    raw_labels_data.forEach(label_item => {
+        // Use original c1, c2, c3 for key as Python returns these
+        const coords_key = `${label_item[0][0].toFixed(2)},${label_item[0][1].toFixed(2)},${label_item[0][2].toFixed(2)}`;
+        labels_map.set(coords_key, label_item[1]); // Store label string
+    });
+
+
+    raw_points_data.forEach(p => {
+        const c1 = p[0];
+        const c2 = p[1];
+        const c3 = p[2];
+        
+        // Apply transformation for a more regular tetrahedron appearance
+        const [transformed_x, transformed_y, transformed_z] = transformToRegularTetrahedron(c1, c2, c3, max_cents_value);
+
+        positions.push(transformed_x, transformed_y, transformed_z);
+
+        const normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
+        color.setHSL( (1 - normalizedComplexity) * 0.35, 1, 0.5 ); // Green to Red HSL
+        colors.push(color.r, color.g, color.b);
+
+        // Add labels
+        const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
+        const label_text = labels_map.get(coords_key);
+        if (label_text) {
+            const sprite = makeTextSprite(label_text, { fontsize: 30, textColor: { r:255, g:255, b:255, a:1.0 } });
+            sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z); // Offset slightly from the point
+            sprite.scale.set(0.2, 0.1, 1); // Adjust scale as needed
+            scene.add(sprite);
+        }
+    });
+
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+
+    const material = new THREE.PointsMaterial({
+        size: 0.05,
+        vertexColors: true,
+        transparent: true,
+        opacity: 0.7
+    });
+
+    const points = new THREE.Points(geometry, material);
+    scene.add(points);
+}
+
+// --- MAIN PYODIDE INITIALIZATION ---
 async function initPyodide() {
     loadingOverlay.style.display = 'flex';
     pyodide = await loadPyodide({
@@ -13,15 +258,12 @@ async function initPyodide() {
     });
     console.log("Pyodide loaded.");
 
-    // Load necessary Python packages
     await pyodide.loadPackage(["numpy", "scipy"]);
     console.log("Numpy and Scipy loaded.");
 
-    // Create directories in Pyodide's virtual filesystem
     pyodide.FS.mkdir("python");
     pyodide.FS.mkdir("python/theory");
 
-    // Write the Python module contents to Pyodide's virtual filesystem
     const tetrahedron_generator_py_content = `import math
 import numpy as np
 import scipy.signal
@@ -520,216 +762,30 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     python_ready = true;
     loadingOverlay.style.display = 'none';
 
-    initThreeJS();
+    initThreeJS(); // Calls the *single* definition of initThreeJS
     animate();
     
     const default_limit_value = 5;
     const default_equave_ratio = 2; // Default to octave
     const default_complexity_method = "Tenney"; // Default complexity method
-    await updateTetrahedron(default_limit_value, default_equave_ratio, default_complexity_method);
+    const default_hide_unison_voices = false;
+    const default_omit_octaves = false;
+    await updateTetrahedron(default_limit_value, default_equave_ratio, default_complexity_method, default_hide_unison_voices, default_omit_octaves);
 
     // Add event listener for the update button
     document.getElementById('updateButton').addEventListener('click', async () => {
         const limitValue = parseFloat(document.getElementById('limitValue').value);
         const equaveRatio = parseFloat(document.getElementById('equaveRatio').value);
         const complexityMethod = document.getElementById('complexityMethod').value;
+        const hideUnisonVoices = document.getElementById('hideUnisonVoices').checked;
+        const omitOctaves = document.getElementById('omitOctaves').checked;
         if (!isNaN(limitValue) && !isNaN(equaveRatio)) {
-            await updateTetrahedron(limitValue, equaveRatio, complexityMethod);
+            await updateTetrahedron(limitValue, equaveRatio, complexityMethod, hideUnisonVoices, omitOctaves);
         } else {
             console.error("Invalid input for limit value or equave ratio.");
         }
     });
 }
 
-function initThreeJS() {
-    scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
-
-    camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.z = 5;
-
-    renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    document.getElementById('container').appendChild(renderer.domElement);
-
-    controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.25;
-    controls.screenSpacePanning = false;
-    controls.minDistance = 1;
-    controls.maxDistance = 10;
-
-    window.addEventListener('resize', onWindowResize, false);
-}
-
-function onWindowResize() {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-}
-
-function animate() {
-    requestAnimationFrame(animate);
-    controls.update();
-    renderer.render(scene, camera);
-}
-
-function makeTextSprite(message, parameters) {
-    if ( parameters === undefined ) parameters = {};
-    const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
-    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 50; // Increased for better resolution
-    const borderThickness = parameters.hasOwnProperty("borderThickness") ? parameters["borderThickness"] : 4;
-    const borderColor = parameters.hasOwnProperty("borderColor") ? parameters["borderColor"] : { r:0, g:0, b:0, a:1.0 };
-    const backgroundColor = parameters.hasOwnProperty("backgroundColor") ? parameters["backgroundColor"] : { r:255, g:255, b:255, a:0.0 };
-    const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
-
-    const canvas = document.createElement('canvas');
-    const context = canvas.getContext('2d');
-    context.font = "Bold " + fontsize + "px " + fontface;
-    
-    // get size data (height depends only on font size)
-    const metrics = context.measureText( message );
-    const textWidth = metrics.width;
-
-    // background color
-    context.fillStyle   = "rgba(" + backgroundColor.r + "," + backgroundColor.g + "," + backgroundColor.b + "," + backgroundColor.a + ")";
-    // border color
-    context.strokeStyle = "rgba(" + borderColor.r + "," + borderColor.g + "," + borderColor.b + "," + borderColor.a + ")";
-
-    context.lineWidth = borderThickness;
-    roundRect(context, borderThickness/2, borderThickness/2, textWidth + borderThickness, fontsize * 1.4 + borderThickness, 6);
-    // 1.4 is font height factor
-
-    // text color
-    context.fillStyle = "rgba(" + textColor.r + ", " + textColor.g + ", " + textColor.b + ", 1.0)";
-    context.fillText( message, borderThickness, fontsize + borderThickness);
-
-    // canvas contents will be used for a texture
-    const texture = new THREE.Texture(canvas) 
-    texture.needsUpdate = true;
-
-    const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
-    const sprite = new THREE.Sprite( spriteMaterial );
-    sprite.scale.set(1.0 * textWidth/fontsize, 1.4 * fontsize/fontsize, 1.0); // Scale sprite to fit text
-    return sprite;  
-}
-
-// function for drawing rounded rectangles
-function roundRect(ctx, x, y, w, h, r) {
-    ctx.beginPath();
-    ctx.moveTo(x+r, y);
-    ctx.lineTo(x+w-r, y);
-    ctx.quadraticCurveTo(x+w, y, x+w, y+r);
-    ctx.lineTo(x+w, y+h-r);
-    ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
-    ctx.lineTo(x+r, y+h);
-    ctx.quadraticCurveTo(x, y+h, x, y+h-r);
-    ctx.lineTo(x, y+r);
-    ctx.quadraticCurveTo(x, y, x+r, y);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();   
-}
-
-async function updateTetrahedron(limit_value, equave_ratio, complexity_method) {
-    if (!python_ready) {
-        console.warn("Python environment not ready yet.");
-        return;
-    }
-    
-    // Clear previous points and labels
-    while(scene.children.length > 0){ 
-        scene.remove(scene.children[0]); 
-    }
-
-    // Call the Python function to get points (c1, c2, c3, complexity)
-    // and labels (c1, c2, c3), label, complexity
-    const points_py_code = `
-        from tetrahedron_generator import generate_odd_limit_points
-        generate_odd_limit_points(
-            limit_value=${limit_value}, 
-            equave_ratio=${equave_ratio}, 
-            limit_mode="odd", 
-            complexity_measure="${complexity_method}", 
-            hide_unison_voices=False, 
-            omit_octaves=False
-        )
-    `;
-    const labels_py_code = `
-        from theory.calculations import generate_ji_tetra_labels
-        generate_ji_tetra_labels(
-            limit_value=${limit_value}, 
-            equave_ratio=${equave_ratio}, 
-            limit_mode="odd", 
-            complexity_measure="${complexity_method}", 
-            hide_unison_voices=False, 
-            omit_octaves=False
-        )
-    `;
-
-    const raw_points_data = await pyodide.runPythonAsync(points_py_code);
-    const raw_labels_data = await pyodide.runPythonAsync(labels_py_code);
-
-    // Process raw_points_data for Three.js points
-    const positions = [];
-    const colors = [];
-    const color = new THREE.Color();
-
-    let minComplexity = Infinity;
-    let maxComplexity = -Infinity;
-    if (raw_points_data.length > 0) {
-        raw_points_data.forEach(p => {
-            minComplexity = Math.min(minComplexity, p[3]);
-            maxComplexity = Math.max(maxComplexity, p[3]);
-        });
-    }
-
-    // Create a Map for quick lookup of labels by coordinates
-    const labels_map = new Map();
-    raw_labels_data.forEach(label_item => {
-        const coords_key = `${label_item[0][0].toFixed(2)},${label_item[0][1].toFixed(2)},${label_item[0][2].toFixed(2)}`;
-        labels_map.set(coords_key, label_item[1]); // Store label string
-    });
-
-
-    raw_points_data.forEach(p => {
-        // Normalize coordinates and complexity for visualization
-        const scale = 1 / 600; // 1200 cents max, so divide by 600 to get a range of 2.
-
-        const x = p[0] * scale;
-        const y = p[1] * scale;
-        const z = p[2] * scale;
-
-        positions.push(x, y, z);
-
-        const normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
-        color.setHSL( (1 - normalizedComplexity) * 0.35, 1, 0.5 ); // Green to Red HSL
-        colors.push(color.r, color.g, color.b);
-
-        // Add labels
-        const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
-        const label_text = labels_map.get(coords_key);
-        if (label_text) {
-            const sprite = makeTextSprite(label_text, { fontsize: 30, textColor: { r:255, g:255, b:255, a:1.0 } });
-            sprite.position.set(x + 0.05, y + 0.05, z); // Offset slightly from the point
-            sprite.scale.set(0.2, 0.1, 1); // Adjust scale as needed
-            scene.add(sprite);
-        }
-    });
-
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-    const material = new THREE.PointsMaterial({
-        size: 0.05,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.7
-    });
-
-    const points = new THREE.Points(geometry, material);
-    scene.add(points);
-}
-
+// Initial call to start the application
 initPyodide();
