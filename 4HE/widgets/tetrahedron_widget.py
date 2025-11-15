@@ -18,7 +18,7 @@ class TetrahedronWidget(gl.GLViewWidget):
         self.scatter_item = None
         self._3d_labels_items = []
 
-    def update_tetrahedron(self, volume_data, points_data, labels_data, show_volume, show_points, show_labels, universal_scale=1.0):
+    def update_tetrahedron(self, volume_data, points_data, labels_data, show_volume, show_points, show_labels, universal_scale=1.0, feature_scaling=1.0, complexity_measure="Tenney"):
         if self.volume_item: self.removeItem(self.volume_item); self.volume_item = None
         if self.scatter_item: self.removeItem(self.scatter_item); self.scatter_item = None
         
@@ -42,8 +42,8 @@ class TetrahedronWidget(gl.GLViewWidget):
         M4x4 = np.eye(4); M4x4[:3, :3] = M
         tetra_transform = Transform3D(M4x4)
 
-        # Set camera center to the tetrahedron's geometric center
-        center_qvector = tetra_transform.map(QVector3D(0.5, 0.5, 0.5))
+        # Set camera center to the apex of the pyramid (1:1:1:2 node)
+        center_qvector = tetra_transform.map(QVector3D(0, 0, 1))
         self.opts['center'] = center_qvector
 
         if show_volume and volume_data:
@@ -68,16 +68,20 @@ class TetrahedronWidget(gl.GLViewWidget):
                 complexities = points[:, 3]
                 norm_coords = coords / max_cents
                 
-                min_c, max_c = complexities.min(), complexities.max()
-                if max_c > min_c:
-                    norm_c = 1.0 - ((complexities - min_c) / (max_c - min_c))
-                else:
-                    norm_c = np.ones_like(complexities)
-                
                 min_scatter_size = 5
-                max_scatter_size = min_scatter_size * 10
-                scatter_range = max_scatter_size - min_scatter_size
-                sizes = ((norm_c * scatter_range) + min_scatter_size) * universal_scale
+                
+                if complexity_measure == "Off":
+                    sizes = min_scatter_size * universal_scale
+                else:
+                    min_c, max_c = complexities.min(), complexities.max()
+                    if max_c > min_c:
+                        norm_c = 1.0 - ((complexities - min_c) / (max_c - min_c))
+                    else:
+                        norm_c = np.ones_like(complexities)
+                    
+                    max_scatter_size = min_scatter_size * feature_scaling
+                    scatter_range = max_scatter_size - min_scatter_size
+                    sizes = ((norm_c * scatter_range) + min_scatter_size) * universal_scale
 
                 self.scatter_item = gl.GLScatterPlotItem(pos=norm_coords, size=sizes, color=(1,1,1,0.8), pxMode=True)
                 self.scatter_item.setTransform(tetra_transform)
@@ -97,15 +101,19 @@ class TetrahedronWidget(gl.GLViewWidget):
                 transformed_pos_qvector = tetra_transform.map(temp_pos_qvector)
                 transformed_pos_np = np.array([transformed_pos_qvector.x(), transformed_pos_qvector.y(), transformed_pos_qvector.z() + 0.5])
 
-                if max_c > min_c:
-                    norm_c = 1.0 - ((complexity - min_c) / (max_c - min_c))
-                else:
-                    norm_c = 1.0
-                
                 min_font_size = 2
-                max_font_size = min_font_size * 7
-                font_range = max_font_size - min_font_size
-                font_size = int(((norm_c * font_range) + min_font_size) * universal_scale)
+
+                if complexity_measure == "Off":
+                    font_size = int(min_font_size * universal_scale)
+                else:
+                    if max_c > min_c:
+                        norm_c = 1.0 - ((complexity - min_c) / (max_c - min_c))
+                    else:
+                        norm_c = 1.0
+                    
+                    max_font_size = min_font_size * feature_scaling
+                    font_range = max_font_size - min_font_size
+                    font_size = int(((norm_c * font_range) + min_font_size) * universal_scale)
 
                 font = QFont()
                 font.setPointSize(font_size)

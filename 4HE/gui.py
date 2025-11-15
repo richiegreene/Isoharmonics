@@ -85,7 +85,8 @@ class FourHEWindow(QMainWindow):
         complexity_layout.setContentsMargins(0,0,0,0)
         complexity_label = QLabel("Complexity Measures:")
         self.complexity_combo = QComboBox()
-        self.complexity_combo.addItems(["Tenney", "Weil", "Wilson", "Gradus"])
+        self.complexity_combo.addItems(["Gradus", "Tenney", "Weil", "Wilson", "Off"])
+        self.complexity_combo.setCurrentText("Tenney")
         self.complexity_combo.currentTextChanged.connect(self._update_complexity_measure)
         complexity_layout.addWidget(complexity_label)
         complexity_layout.addWidget(self.complexity_combo)
@@ -101,6 +102,16 @@ class FourHEWindow(QMainWindow):
         size_layout.addWidget(size_label)
         size_layout.addWidget(self.size_input)
         control_layout.addWidget(self.size_widget)
+
+        # Feature Scaling Input
+        self.feature_scaling_widget = QWidget()
+        feature_scaling_layout = QHBoxLayout(self.feature_scaling_widget)
+        feature_scaling_layout.setContentsMargins(0,0,0,0)
+        feature_scaling_label = QLabel("Feature Scaling:")
+        self.feature_scaling_input = QLineEdit("10")
+        feature_scaling_layout.addWidget(feature_scaling_label)
+        feature_scaling_layout.addWidget(self.feature_scaling_input)
+        control_layout.addWidget(self.feature_scaling_widget)
 
         # Omission Checkboxes
         self.omissions_widget = QWidget()
@@ -133,22 +144,30 @@ class FourHEWindow(QMainWindow):
         elif text == "Integer Limit":
             self.limit_mode = "integer"
             self.odd_limit_input.setToolTip("Integer-Limit must be an integer >= 1.")
-        self.update_visualization()
+        # No auto-update
 
     def _update_complexity_measure(self, text):
         self.complexity_measure = text
-        self.update_visualization()
+        # No auto-update
 
     def _update_visibility(self, view_mode):
         is_volume = (view_mode == "Volume Data")
-        is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
+        is_scatter = (view_mode == "Scatter Plot")
+        is_labels = (view_mode == "Labels")
+        is_scatter_or_labels = is_scatter or is_labels
 
         self.resolution_widget.setVisible(is_volume)
         self.limit_mode_layout_widget.setVisible(is_scatter_or_labels)
         self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
         self.complexity_widget.setVisible(is_scatter_or_labels)
         self.size_widget.setVisible(is_scatter_or_labels)
+        self.feature_scaling_widget.setVisible(is_scatter_or_labels)
         self.omissions_widget.setVisible(is_scatter_or_labels)
+
+        if is_scatter:
+            self.feature_scaling_input.setText("10")
+        elif is_labels:
+            self.feature_scaling_input.setText("7")
 
     def update_visualization(self):
         try:
@@ -164,12 +183,14 @@ class FourHEWindow(QMainWindow):
             limit_value = 0
             current_limit_mode = self.limit_mode
             universal_scale = 1.0
+            feature_scaling = 1.0
             omit_unisons = False
             omit_octaves = False
             
             if show_points or show_labels:
                 limit_value = int(self.odd_limit_input.text())
                 universal_scale = float(self.size_input.text())
+                feature_scaling = float(self.feature_scaling_input.text())
                 omit_unisons = self.omit_unisons_checkbox.isChecked()
                 omit_octaves = self.omit_octaves_checkbox.isChecked()
                 if current_limit_mode == "odd":
@@ -228,7 +249,9 @@ class FourHEWindow(QMainWindow):
             show_volume=show_volume,
             show_points=show_points,
             show_labels=show_labels,
-            universal_scale=universal_scale
+            universal_scale=universal_scale,
+            feature_scaling=feature_scaling,
+            complexity_measure=self.complexity_measure
         )
         
         progress.setValue(100)
