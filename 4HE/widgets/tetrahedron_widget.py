@@ -18,7 +18,7 @@ class TetrahedronWidget(gl.GLViewWidget):
         self.scatter_item = None
         self._3d_labels_items = []
 
-    def update_tetrahedron(self, volume_data, points_data, labels_data, show_volume, show_points, show_labels):
+    def update_tetrahedron(self, volume_data, points_data, labels_data, show_volume, show_points, show_labels, universal_scale=1.0):
         if self.volume_item: self.removeItem(self.volume_item); self.volume_item = None
         if self.scatter_item: self.removeItem(self.scatter_item); self.scatter_item = None
         
@@ -73,9 +73,9 @@ class TetrahedronWidget(gl.GLViewWidget):
                 else:
                     norm_c = np.ones_like(complexities)
                 
-                sizes = (norm_c * 7) + 1 # Sizes from 1 to 8
+                sizes = ((norm_c * 10) + 5) * universal_scale
 
-                self.scatter_item = gl.GLScatterPlotItem(pos=norm_coords, size=sizes, color=(1,1,1,0.8), pxMode=False)
+                self.scatter_item = gl.GLScatterPlotItem(pos=norm_coords, size=sizes, color=(1,1,1,0.8), pxMode=True)
                 self.scatter_item.setTransform(scatter_transform)
                 self.addItem(self.scatter_item)
 
@@ -99,7 +99,7 @@ class TetrahedronWidget(gl.GLViewWidget):
                 else:
                     norm_c = 1.0
                 
-                font_size = int((norm_c * 8) + 8) # Font sizes from 8 to 16
+                font_size = int(((norm_c * 8) + 8) * universal_scale)
 
                 font = QFont()
                 font.setPointSize(font_size)

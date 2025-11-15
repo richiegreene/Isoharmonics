@@ -67,6 +67,16 @@ class FourHEWindow(QMainWindow):
         control_layout.addWidget(self.limit_mode_layout_widget)
         self.limit_mode = "odd"
 
+        # Odd Limit
+        self.odd_limit_layout_widget = QWidget()
+        self.odd_limit_layout = QHBoxLayout(self.odd_limit_layout_widget)
+        self.odd_limit_layout.setContentsMargins(0,0,0,0)
+        odd_limit_label = QLabel("Odd-Limit:")
+        self.odd_limit_input = QLineEdit("9")
+        self.odd_limit_layout.addWidget(odd_limit_label)
+        self.odd_limit_layout.addWidget(self.odd_limit_input)
+        control_layout.addWidget(self.odd_limit_layout_widget)
+
         # Complexity Measures Dropdown
         self.complexity_widget = QWidget()
         complexity_layout = QHBoxLayout(self.complexity_widget)
@@ -80,22 +90,22 @@ class FourHEWindow(QMainWindow):
         control_layout.addWidget(self.complexity_widget)
         self.complexity_measure = "Tenney"
 
-        # Odd Limit
-        self.odd_limit_layout_widget = QWidget()
-        self.odd_limit_layout = QHBoxLayout(self.odd_limit_layout_widget)
-        self.odd_limit_layout.setContentsMargins(0,0,0,0)
-        odd_limit_label = QLabel("Odd-Limit:")
-        self.odd_limit_input = QLineEdit("9")
-        self.odd_limit_layout.addWidget(odd_limit_label)
-        self.odd_limit_layout.addWidget(self.odd_limit_input)
-        control_layout.addWidget(self.odd_limit_layout_widget)
+        # Size Input
+        self.size_widget = QWidget()
+        size_layout = QHBoxLayout(self.size_widget)
+        size_layout.setContentsMargins(0,0,0,0)
+        size_label = QLabel("Size:")
+        self.size_input = QLineEdit("1.0")
+        size_layout.addWidget(size_label)
+        size_layout.addWidget(self.size_input)
+        control_layout.addWidget(self.size_widget)
 
         self.toggle_odd_limit_visibility("Volume Data")
 
-        # Update Button
-        self.update_button = QPushButton("Update Visualization")
-        self.update_button.clicked.connect(self.update_visualization)
-        control_layout.addWidget(self.update_button)
+        # Render Button
+        self.render_button = QPushButton("Render")
+        self.render_button.clicked.connect(self.update_visualization)
+        control_layout.addWidget(self.render_button)
 
         control_layout.addStretch()
 
@@ -119,8 +129,9 @@ class FourHEWindow(QMainWindow):
     def toggle_odd_limit_visibility(self, view_mode):
         is_scatter_or_labels = (view_mode == "Scatter Plot" or view_mode == "Labels")
         self.limit_mode_layout_widget.setVisible(is_scatter_or_labels)
-        self.complexity_widget.setVisible(is_scatter_or_labels)
         self.odd_limit_layout_widget.setVisible(is_scatter_or_labels)
+        self.complexity_widget.setVisible(is_scatter_or_labels)
+        self.size_widget.setVisible(is_scatter_or_labels)
 
     def update_visualization(self):
         try:
@@ -135,9 +146,11 @@ class FourHEWindow(QMainWindow):
             
             limit_value = 0
             current_limit_mode = self.limit_mode
+            universal_scale = 1.0
             
             if show_points or show_labels:
                 limit_value = int(self.odd_limit_input.text())
+                universal_scale = float(self.size_input.text())
                 if current_limit_mode == "odd":
                     if limit_value < 3 or limit_value % 2 == 0:
                         raise ValueError("Odd-Limit must be an odd number >= 3.")
@@ -182,6 +195,7 @@ class FourHEWindow(QMainWindow):
             show_volume=show_volume,
             show_points=show_points,
             show_labels=show_labels,
+            universal_scale=universal_scale
         )
         
         progress.setValue(100)
