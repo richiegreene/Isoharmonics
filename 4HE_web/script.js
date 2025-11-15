@@ -117,6 +117,19 @@ function roundRect(ctx, x, y, w, h, r) {
     ctx.stroke();   
 }
 
+// Function to create a circular point sprite
+function makePointSprite(color, opacity) {
+    const spriteMaterial = new THREE.SpriteMaterial({
+        map: circleTexture,
+        color: color,
+        transparent: true,
+        opacity: opacity,
+        alphaTest: 0.1 // Use alphaTest for transparency
+    });
+    const sprite = new THREE.Sprite(spriteMaterial);
+    return sprite;
+}
+
 // --- CORE THREE.JS FUNCTIONS ---
 function initThreeJS() {
     const container = document.getElementById('container');
@@ -157,22 +170,30 @@ function animate() {
     requestAnimationFrame(animate);
     controls.update();
 
-    // Dynamic scaling for sprites (labels) to maintain constant screen size
-    if (currentLayoutDisplay === 'labels') {
+    // Dynamic scaling for sprites (labels and points) to maintain constant screen size
+    if (currentLayoutDisplay === 'labels' || currentLayoutDisplay === 'points') {
         currentSprites.forEach(sprite => {
             const distance = camera.position.distanceTo(sprite.position);
             let currentSpriteSize = 0.5; // Default base screen size for sprite
 
-            if (sprite.userData.enableSize) {
-                // Calculate sprite size based on complexity, baseSize, and scalingFactor
-                const baseScreenSize = sprite.userData.baseSize * 0.5; // A smaller multiplier, adjust as needed
-                const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
-                currentSpriteSize = Math.max(baseScreenSize, scaledSize); // Ensure minimum size
-            } else {
-                currentSpriteSize = sprite.userData.baseSize * 0.5; // Uniform size based on baseSize
+            if (sprite.userData.type === 'label') {
+                if (sprite.userData.enableSize) {
+                    const baseScreenSize = sprite.userData.baseSize * 0.5; // Multiplier for labels
+                    const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
+                    currentSpriteSize = Math.max(baseScreenSize, scaledSize);
+                } else {
+                    currentSpriteSize = sprite.userData.baseSize * 0.5; // Uniform size for labels
+                }
+            } else if (sprite.userData.type === 'point') {
+                if (sprite.userData.enableSize) {
+                    const baseScreenSize = sprite.userData.baseSize * 0.01; // Multiplier for points, adjust as needed
+                    const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
+                    currentSpriteSize = Math.max(baseScreenSize, scaledSize);
+                } else {
+                    currentSpriteSize = sprite.userData.baseSize * 0.01; // Uniform size for points
+                }
             }
             
-            // Scale sprite to maintain constant screen size
             sprite.scale.set(currentSpriteSize * distance, currentSpriteSize * distance, 1);
         });
     }
@@ -243,9 +264,9 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
     // Calculate max_cents dynamically based on equave_ratio
     const max_cents_value = 1200 * Math.log2(equave_ratio);
 
-    // Convert JS booleans to Python string equivalents
-    const py_hide_unison_voices = hide_unison_voices ? "True" : "False";
-    const py_omit_octaves = omit_octaves ? "True" : "False";
+    // Set global Python variables for boolean flags
+    pyodide.globals.set("py_hide_unison_voices", hide_unison_voices);
+    pyodide.globals.set("py_omit_octaves", omit_octaves);
 
     // Call the Python function to get points (c1, c2, c3, complexity)
     // and labels (c1, c2, c3), label, complexity
@@ -256,8 +277,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             equave_ratio=${equave_ratio}, 
             limit_mode="odd", 
             complexity_measure="${complexity_method}", 
-            hide_unison_voices=${py_hide_unison_voices}, 
-            omit_octaves=${py_omit_octaves}
+            hide_unison_voices=py_hide_unison_voices, 
+            omit_octaves=py_omit_octaves
         )
     `;
     const labels_py_code = `
@@ -267,8 +288,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             equave_ratio=${equave_ratio}, 
             limit_mode="odd", 
             complexity_measure="${complexity_method}", 
-            hide_unison_voices=${py_hide_unison_voices}, 
-            omit_octaves=${py_omit_octaves}
+            hide_unison_voices=py_hide_unison_voices, 
+            omit_octaves=py_omit_octaves
         )
     `;
 
@@ -322,6 +343,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
         let displayColor = new THREE.Color();
         let spriteTextColor = { r:255, g:255, b:255, a:1.0 }; // Default white
+        let spritePointColor = new THREE.Color(1, 1, 1); // Default white for points
+        let spritePointOpacity = 0.7;
 
         if (enable_color) {
             // Apply scaling factor to invertedComplexity
@@ -331,58 +354,40 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             const infernoColor = infernoColormap(scaledComplexity);
             displayColor.setRGB(infernoColor.r, infernoColor.g, infernoColor.b);
             spriteTextColor = { r: infernoColor.r * 255, g: infernoColor.g * 255, b: infernoColor.b * 255, a:1.0 };
+            spritePointColor.setRGB(infernoColor.r, infernoColor.g, infernoColor.b);
         } else {
             displayColor.setRGB(1, 1, 1); // White
+            spritePointColor.setRGB(1, 1, 1); // White
         }
         colors.push(displayColor.r, displayColor.g, displayColor.b);
 
-        // Add labels
-        const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
-        const label_text = labels_map.get(coords_key);
-        if (label_text && layout_display === 'labels') {
-            const sprite = makeTextSprite(label_text, { textColor: spriteTextColor }); // fontsize is now fixed in makeTextSprite
-            sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z); // Offset slightly from the point
-            // Store properties for dynamic scaling in animate loop
-            sprite.userData.normalizedComplexity = invertedComplexity; // Use inverted complexity
-            sprite.userData.baseSize = internal_label_base_size; // Use internal label base size
+        // Add labels or points based on layout_display
+        if (layout_display === 'labels') {
+            const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
+            const label_text = labels_map.get(coords_key);
+            if (label_text) {
+                const sprite = makeTextSprite(label_text, { textColor: spriteTextColor });
+                sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z);
+                sprite.userData.normalizedComplexity = invertedComplexity;
+                sprite.userData.baseSize = internal_label_base_size;
+                sprite.userData.scalingFactor = scaling_factor;
+                sprite.userData.enableSize = enable_size;
+                sprite.userData.type = 'label'; // Add type to distinguish in animate
+                scene.add(sprite);
+                currentSprites.push(sprite);
+            }
+        } else if (layout_display === 'points') {
+            const sprite = makePointSprite(spritePointColor, spritePointOpacity);
+            sprite.position.set(transformed_x, transformed_y, transformed_z); // No offset for points
+            sprite.userData.normalizedComplexity = invertedComplexity;
+            sprite.userData.baseSize = internal_point_base_size; // Use internal point base size
             sprite.userData.scalingFactor = scaling_factor;
             sprite.userData.enableSize = enable_size;
+            sprite.userData.type = 'point'; // Add type to distinguish in animate
             scene.add(sprite);
-            currentSprites.push(sprite); // Add to array for dynamic scaling
+            currentSprites.push(sprite);
         }
     });
-
-    if (layout_display === 'points') {
-        let finalPointSize = internal_point_base_size; // Use internal point base size
-        let finalOpacity = 0.7;
-
-        if (enable_size) {
-            // Apply scaling factor to point size
-            // Compromise: all points scaled by scaling_factor, not individually by complexity
-            finalPointSize = internal_point_base_size * scaling_factor;
-        }
-        
-        if (!enable_color) {
-            finalOpacity = 0.7; // Slightly translucent white
-        }
-
-        const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-
-        const material = new THREE.PointsMaterial({
-            size: finalPointSize,
-            vertexColors: true,
-            transparent: true,
-            opacity: finalOpacity,
-            sizeAttenuation: false, // Crucial for fixed screen size points
-            map: circleTexture, // Use circular texture
-            alphaTest: 0.1 // To help with transparency and "corners"
-        });
-
-        const points = new THREE.Points(geometry, material);
-        scene.add(points);
-    }
 }
 
 // --- MAIN PYODIDE INITIALIZATION ---
@@ -392,6 +397,18 @@ async function initPyodide() {
         indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/",
     });
     console.log("Pyodide loaded.");
+
+    // Redirect Python stdout/stderr to JS console
+    pyodide.setStdout({
+        write: (msg) => {
+            console.log("Python stdout:", msg);
+        }
+    });
+    pyodide.setStderr({
+        write: (msg) => {
+            console.error("Python stderr:", msg);
+        }
+    });
 
     await pyodide.loadPackage(["numpy", "scipy"]);
     console.log("Numpy and Scipy loaded.");
@@ -545,11 +562,11 @@ def generate_odd_limit_points(limit_value, equave_ratio, limit_mode="odd", compl
     pyodide.FS.writeFile("python/tetrahedron_generator.py", tetrahedron_generator_py_content, { encoding: "utf8" });
 
     const calculations_py_content = `import math
+import numpy as np
 from fractions import Fraction
 from functools import reduce
 from math import gcd
 from itertools import combinations_with_replacement
-import numpy as np
 
 def cents(x):
     return 1200 * np.log2(x)
@@ -614,6 +631,7 @@ def get_odd_part_of_number(num):
     return num
 
 def get_odd_limit(ratio):
+    """Calculates the odd limit of a given ratio."""
     try:
         ratio = Fraction(ratio).limit_denominator(10000)
         n, d = ratio.numerator, ratio.denominator
@@ -626,6 +644,7 @@ def get_odd_limit(ratio):
         return 1
 
 def get_integer_limit(ratio):
+    """Calculates the integer limit of a given ratio."""
     try:
         ratio = Fraction(ratio).limit_denominator(10000)
         return max(ratio.numerator, ratio.denominator)
@@ -693,6 +712,10 @@ def _generate_valid_numbers(limit_value, limit_mode):
     return valid_numbers
 
 def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", complexity_measure="Tenney", hide_unison_voices=False, omit_octaves=False):
+    """
+    Generates a list of 4-note JI chords (labels) and their 3D coordinates (c1, c2, c3)
+    and complexity for the tetrahedron.
+    """
     labels_data = []
     equave_ratio_float = float(equave_ratio)
 
@@ -793,7 +816,9 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     if limit_mode == "odd" or limit_mode == "integer":
         max_val_for_n_d = limit_value * 3
     elif limit_mode == "prime":
-        max_val_for_n_d = prime_limit * max_exponent * 3
+        # For prime limit, we need a different approach to find the max value for n and d
+        # A rough estimation could be prime_limit ^ max_exponent
+        max_val_for_n_d = prime_limit * max_exponent * 3 # Heuristic
 
     primes = None
     if limit_mode == "prime":
@@ -931,29 +956,29 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         const equaveRatio = parseFloat(document.getElementById('equaveRatio').value);
         const complexityMethod = document.getElementById('complexityMethod').value;
         const hideUnisonVoices = document.getElementById('hideUnisonVoices').checked;
-        const omitOctaves = parseFloat(document.getElementById('omitOctaves').value);
-        const baseSize = parseFloat(document.getElementById('baseSize').value); // Changed from pointSize
+        const omitOctaves = document.getElementById('omitOctaves').checked; // Corrected from parseFloat(document.getElementById('omitOctaves').value);
+        const baseSize = parseFloat(document.getElementById('baseSize').value);
         const scalingFactor = parseFloat(document.getElementById('scalingFactor').value);
         const enableSize = document.getElementById('enableSize').checked;
         const enableColor = document.getElementById('enableColor').checked;
         const layoutDisplay = document.getElementById('layoutDisplay').value;
         currentLayoutDisplay = layoutDisplay; // Set global variable
 
-        if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(baseSize) && !isNaN(scalingFactor)) { // Changed from pointSize
+        if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(baseSize) && !isNaN(scalingFactor)) {
             await updateTetrahedron(
                 limitValue, 
                 equaveRatio, 
                 complexityMethod, 
                 hideUnisonVoices, 
                 omitOctaves,
-                baseSize, // Changed from point_size
+                baseSize, 
                 scalingFactor,
                 enableSize,
                 enableColor,
                 layoutDisplay
             );
         } else {
-            console.error("Invalid input for limit value, equave ratio, base size, or scaling factor."); // Changed from point size
+            console.error("Invalid input for limit value, equave ratio, base size, or scaling factor.");
         }
     });
 }

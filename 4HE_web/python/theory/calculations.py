@@ -50,7 +50,7 @@ def format_series_segment(series):
     fractions = [Fraction(ratio).limit_denominator() for ratio in series]
     denominators = [frac.denominator for frac in fractions]
     lcd = find_lcd(denominators)
-    numerators = [int(frac.numerator * (lcd / frac.denominator)) for ratio in fractions] # Fixed: use frac.denominator instead of hardcoded 1
+    numerators = [int(frac.numerator * (lcd / frac.denominator)) for frac in fractions] # Fixed: use frac.denominator instead of hardcoded 1
     
     if lcd == 1:
         return ':'.join(map(str, numerators))
@@ -239,7 +239,7 @@ def get_max_exponent_for_p_smooth(n, p_limit, primes=None):
                 temp_n //= p
             max_exp = max(max_exp, exp)
             
-    if temp_n > 1: # Remainder has prime factors > p_limit, so not p-smooth
+    if temp_n > 1:
         return float('inf')
         
     return max_exp
