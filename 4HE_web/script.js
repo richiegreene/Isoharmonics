@@ -8,15 +8,48 @@ let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
-// Inferno Colormap function
+// More accurate Inferno Colormap function
 function infernoColormap(value) {
-    // Value is expected to be between 0 and 1
-    // This is a simplified approximation of the inferno colormap
-    // For a more accurate version, a lookup table or more complex math would be needed.
-    // This version transitions from dark (low complexity) to bright yellow (high complexity)
-    const r = Math.pow(value, 0.5) * 0.8 + 0.2;
-    const g = Math.pow(value, 1.5) * 0.7 + 0.1;
-    const b = Math.pow(value, 2.5) * 0.6;
+    // Clamp value between 0 and 1
+    value = Math.min(1, Math.max(0, value));
+
+    const colors = [
+        { r: 0/255, g: 0/255, b: 4/255 },    // #000004 (0%)
+        { r: 64/255, g: 10/255, b: 90/255 }, // #400a5a (~25%)
+        { r: 147/255, g: 59/255, b: 147/255 },// #933b93 (~50%)
+        { r: 224/255, g: 107/255, b: 58/255 },// #e06b3a (~75%)
+        { r: 255/255, g: 218/255, b: 14/255 } // #ffda0e (100%)
+    ];
+    const stops = [0, 0.25, 0.5, 0.75, 1];
+
+    // Find the segment index
+    let i = 0;
+    for (let j = 0; j < stops.length - 1; j++) {
+        if (value >= stops[j] && value <= stops[j + 1]) {
+            i = j;
+            break;
+        }
+    }
+    // Handle the case where value is exactly 1, it should map to the last color
+    if (value === 1) {
+        i = stops.length - 2; // This ensures endColor is colors[stops.length - 1]
+    }
+
+
+    const startColor = colors[i];
+    const endColor = colors[i + 1];
+    const startStop = stops[i];
+    const endStop = stops[i + 1];
+
+    let factor = 0;
+    if (endStop !== startStop) {
+        factor = (value - startStop) / (endStop - startStop);
+    }
+
+    const r = startColor.r + factor * (endColor.r - startColor.r);
+    const g = startColor.g + factor * (endColor.g - startColor.g);
+    const b = startColor.b + factor * (endColor.b - startColor.b);
+
     return { r: r, g: g, b: b };
 }
 
@@ -64,7 +97,7 @@ function makeTextSprite(message, parameters) {
 
     const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
     const sprite = new THREE.Sprite( spriteMaterial );
-    sprite.scale.set(canvas.width / fontsize * 0.1, canvas.height / fontsize * 0.1, 1.0); // Adjust scale based on canvas size
+    sprite.scale.set(canvas.width / fontsize, canvas.height / fontsize, 1.0); // Adjust scale based on canvas size, more neutral
     return sprite;  
 }
 
@@ -132,11 +165,11 @@ function animate() {
 
             if (sprite.userData.enableSize) {
                 // Calculate sprite size based on complexity, baseSize, and scalingFactor
-                const baseScreenSize = sprite.userData.baseSize * 10; // Adjust multiplier as needed for visual size
+                const baseScreenSize = sprite.userData.baseSize * 0.5; // A smaller multiplier, adjust as needed
                 const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
                 currentSpriteSize = Math.max(baseScreenSize, scaledSize); // Ensure minimum size
             } else {
-                currentSpriteSize = sprite.userData.baseSize * 10; // Uniform size based on baseSize
+                currentSpriteSize = sprite.userData.baseSize * 0.5; // Uniform size based on baseSize
             }
             
             // Scale sprite to maintain constant screen size
@@ -265,6 +298,13 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
     });
 
 
+    // Define conversion factors for GUI baseSize to internal base sizes
+    const label_conversion_factor = 0.0033; // GUI baseSize 1 -> internal 0.0033
+    const point_conversion_factor = 5;      // GUI baseSize 1 -> internal 5
+
+    const internal_label_base_size = base_size * label_conversion_factor;
+    const internal_point_base_size = base_size * point_conversion_factor;
+
     raw_points_data.forEach(p => {
         const c1 = p[0];
         const c2 = p[1];
@@ -277,12 +317,15 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
         let normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
         
+        // Invert normalizedComplexity for sizing and coloring: least complex (0) -> 1, most complex (1) -> 0
+        let invertedComplexity = 1 - normalizedComplexity;
+
         let displayColor = new THREE.Color();
         let spriteTextColor = { r:255, g:255, b:255, a:1.0 }; // Default white
 
         if (enable_color) {
-            // Apply scaling factor to complexity if enabled
-            let scaledComplexity = normalizedComplexity * scaling_factor;
+            // Apply scaling factor to invertedComplexity
+            let scaledComplexity = invertedComplexity * scaling_factor;
             scaledComplexity = Math.min(1, Math.max(0, scaledComplexity)); // Clamp between 0 and 1
             
             const infernoColor = infernoColormap(scaledComplexity);
@@ -300,8 +343,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             const sprite = makeTextSprite(label_text, { textColor: spriteTextColor }); // fontsize is now fixed in makeTextSprite
             sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z); // Offset slightly from the point
             // Store properties for dynamic scaling in animate loop
-            sprite.userData.normalizedComplexity = normalizedComplexity;
-            sprite.userData.baseSize = base_size;
+            sprite.userData.normalizedComplexity = invertedComplexity; // Use inverted complexity
+            sprite.userData.baseSize = internal_label_base_size; // Use internal label base size
             sprite.userData.scalingFactor = scaling_factor;
             sprite.userData.enableSize = enable_size;
             scene.add(sprite);
@@ -310,13 +353,13 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
     });
 
     if (layout_display === 'points') {
-        let finalPointSize = base_size;
+        let finalPointSize = internal_point_base_size; // Use internal point base size
         let finalOpacity = 0.7;
 
         if (enable_size) {
             // Apply scaling factor to point size
             // Compromise: all points scaled by scaling_factor, not individually by complexity
-            finalPointSize = base_size * scaling_factor;
+            finalPointSize = internal_point_base_size * scaling_factor;
         }
         
         if (!enable_color) {
