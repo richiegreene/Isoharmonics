@@ -74,7 +74,10 @@ class TetrahedronWidget(gl.GLViewWidget):
                 else:
                     norm_c = np.ones_like(complexities)
                 
-                sizes = ((norm_c * 10) + 5) * universal_scale
+                min_scatter_size = 5
+                max_scatter_size = min_scatter_size * 10
+                scatter_range = max_scatter_size - min_scatter_size
+                sizes = ((norm_c * scatter_range) + min_scatter_size) * universal_scale
 
                 self.scatter_item = gl.GLScatterPlotItem(pos=norm_coords, size=sizes, color=(1,1,1,0.8), pxMode=True)
                 self.scatter_item.setTransform(tetra_transform)
@@ -99,7 +102,10 @@ class TetrahedronWidget(gl.GLViewWidget):
                 else:
                     norm_c = 1.0
                 
-                font_size = int(((norm_c * 8) + 8) * universal_scale)
+                min_font_size = 2
+                max_font_size = min_font_size * 7
+                font_range = max_font_size - min_font_size
+                font_size = int(((norm_c * font_range) + min_font_size) * universal_scale)
 
                 font = QFont()
                 font.setPointSize(font_size)
