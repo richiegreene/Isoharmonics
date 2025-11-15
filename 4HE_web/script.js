@@ -5,6 +5,8 @@ let scene, camera, renderer, controls;
 let pyodide;
 let loadingOverlay = document.getElementById('loading-overlay');
 let python_ready = false;
+let currentSprites = []; // To store sprites for dynamic scaling
+let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
 // --- HELPER FUNCTIONS ---
 function makeTextSprite(message, parameters) {
@@ -90,6 +92,16 @@ function onWindowResize() {
 function animate() {
     requestAnimationFrame(animate);
     controls.update();
+
+    // Dynamic scaling for sprites (labels) to maintain constant screen size
+    if (currentLayoutDisplay === 'labels') {
+        currentSprites.forEach(sprite => {
+            const distance = camera.position.distanceTo(sprite.position);
+            const spriteSize = 0.5; // Base size for the sprite on screen
+            sprite.scale.set(spriteSize * distance, spriteSize * distance, 1);
+        });
+    }
+
     renderer.render(scene, camera);
 }
 
@@ -141,7 +153,7 @@ function transformToRegularTetrahedron(c1, c2, c3, max_val) {
 }
 
 // --- TETRAHEDRON DATA GENERATION AND RENDERING ---
-async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves) {
+async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves, point_size, scaling_factor, enable_size, enable_color, layout_display) {
     if (!python_ready) {
         console.warn("Python environment not ready yet.");
         return;
@@ -151,6 +163,7 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
     while(scene.children.length > 0){ 
         scene.remove(scene.children[0]); 
     }
+    currentSprites = []; // Clear sprites array
 
     // Calculate max_cents dynamically based on equave_ratio
     const max_cents_value = 1200 * Math.log2(equave_ratio);
@@ -220,34 +233,52 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
         positions.push(transformed_x, transformed_y, transformed_z);
 
-        const normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
+        let normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
+        
+        // Apply scaling factor to complexity if enabled
+        if (enable_color) {
+            normalizedComplexity = normalizedComplexity * scaling_factor;
+            normalizedComplexity = Math.min(1, Math.max(0, normalizedComplexity)); // Clamp between 0 and 1
+        }
+
         color.setHSL( (1 - normalizedComplexity) * 0.35, 1, 0.5 ); // Green to Red HSL
         colors.push(color.r, color.g, color.b);
 
         // Add labels
         const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
         const label_text = labels_map.get(coords_key);
-        if (label_text) {
+        if (label_text && layout_display === 'labels') {
             const sprite = makeTextSprite(label_text, { fontsize: 30, textColor: { r:255, g:255, b:255, a:1.0 } });
             sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z); // Offset slightly from the point
-            sprite.scale.set(0.2, 0.1, 1); // Adjust scale as needed
+            // Initial scale, will be adjusted in animate loop
+            sprite.scale.set(0.2, 0.1, 1); 
             scene.add(sprite);
+            currentSprites.push(sprite); // Add to array for dynamic scaling
         }
     });
 
-    const geometry = new THREE.BufferGeometry();
-    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-    geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    if (layout_display === 'points') {
+        let finalPointSize = point_size;
+        if (enable_size) {
+            // Apply scaling factor to point size
+            finalPointSize = point_size * scaling_factor;
+        }
 
-    const material = new THREE.PointsMaterial({
-        size: 0.05,
-        vertexColors: true,
-        transparent: true,
-        opacity: 0.7
-    });
+        const geometry = new THREE.BufferGeometry();
+        geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+        geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
 
-    const points = new THREE.Points(geometry, material);
-    scene.add(points);
+        const material = new THREE.PointsMaterial({
+            size: finalPointSize,
+            vertexColors: true,
+            transparent: true,
+            opacity: 0.7,
+            sizeAttenuation: false // Crucial for fixed screen size points
+        });
+
+        const points = new THREE.Points(geometry, material);
+        scene.add(points);
+    }
 }
 
 // --- MAIN PYODIDE INITIALIZATION ---
@@ -770,7 +801,25 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     const default_complexity_method = "Tenney"; // Default complexity method
     const default_hide_unison_voices = false;
     const default_omit_octaves = false;
-    await updateTetrahedron(default_limit_value, default_equave_ratio, default_complexity_method, default_hide_unison_voices, default_omit_octaves);
+    const default_point_size = parseFloat(document.getElementById('pointSize').value);
+    const default_scaling_factor = parseFloat(document.getElementById('scalingFactor').value);
+    const default_enable_size = document.getElementById('enableSize').checked;
+    const default_enable_color = document.getElementById('enableColor').checked;
+    const default_layout_display = document.getElementById('layoutDisplay').value;
+    currentLayoutDisplay = default_layout_display; // Set global variable
+
+    await updateTetrahedron(
+        default_limit_value, 
+        default_equave_ratio, 
+        default_complexity_method, 
+        default_hide_unison_voices, 
+        default_omit_octaves,
+        default_point_size,
+        default_scaling_factor,
+        default_enable_size,
+        default_enable_color,
+        default_layout_display
+    );
 
     // Add event listener for the update button
     document.getElementById('updateButton').addEventListener('click', async () => {
@@ -779,10 +828,28 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         const complexityMethod = document.getElementById('complexityMethod').value;
         const hideUnisonVoices = document.getElementById('hideUnisonVoices').checked;
         const omitOctaves = document.getElementById('omitOctaves').checked;
-        if (!isNaN(limitValue) && !isNaN(equaveRatio)) {
-            await updateTetrahedron(limitValue, equaveRatio, complexityMethod, hideUnisonVoices, omitOctaves);
+        const pointSize = parseFloat(document.getElementById('pointSize').value);
+        const scalingFactor = parseFloat(document.getElementById('scalingFactor').value);
+        const enableSize = document.getElementById('enableSize').checked;
+        const enableColor = document.getElementById('enableColor').checked;
+        const layoutDisplay = document.getElementById('layoutDisplay').value;
+        currentLayoutDisplay = layoutDisplay; // Set global variable
+
+        if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(pointSize) && !isNaN(scalingFactor)) {
+            await updateTetrahedron(
+                limitValue, 
+                equaveRatio, 
+                complexityMethod, 
+                hideUnisonVoices, 
+                omitOctaves,
+                pointSize,
+                scalingFactor,
+                enableSize,
+                enableColor,
+                layoutDisplay
+            );
         } else {
-            console.error("Invalid input for limit value or equave ratio.");
+            console.error("Invalid input for limit value, equave ratio, point size, or scaling factor.");
         }
     });
 }
