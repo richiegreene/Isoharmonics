@@ -8,6 +8,133 @@ let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
+// --- LOGGING UTILITY ---
+function logToScreen(message) {
+    const logDisplay = document.getElementById('log-display');
+    if (logDisplay) {
+        const logEntry = document.createElement('p');
+        logEntry.textContent = `> ${message}`;
+        logDisplay.appendChild(logEntry);
+        // Auto-scroll to the bottom
+        logDisplay.scrollTop = logDisplay.scrollHeight;
+    }
+    // Also log to the actual console for good measure
+    console.log(message);
+}
+
+// --- AUDIO ENGINE ---
+let audioCtx;
+let oscillators = [];
+let mainGainNode;
+// Persistent effect nodes
+let dryGain, wetGain, delayNode, feedbackNode, chorusDelayNode, lfoNode, lfoGainNode;
+
+function initAudio() {
+    if (audioCtx) return; // Already initialized
+    try {
+        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        logToScreen(`AudioContext created. State: ${audioCtx.state}`);
+
+        // --- Create persistent effects chain ---
+        mainGainNode = audioCtx.createGain();
+
+        // Mix gains
+        dryGain = audioCtx.createGain();
+        dryGain.gain.value = 0.7; // 70% dry
+        wetGain = audioCtx.createGain();
+        wetGain.gain.value = 0.3; // 30% wet
+
+        // Chorus effect
+        chorusDelayNode = audioCtx.createDelay(0.1);
+        chorusDelayNode.delayTime.value = 0.005; // 5ms
+        lfoNode = audioCtx.createOscillator();
+        lfoNode.type = 'sine';
+        lfoNode.frequency.value = 5; // 5Hz
+        lfoGainNode = audioCtx.createGain();
+        lfoGainNode.gain.value = 0.003; // 3ms depth
+        lfoNode.connect(lfoGainNode);
+        lfoGainNode.connect(chorusDelayNode.delayTime);
+        lfoNode.start();
+
+        // Echo effect
+        delayNode = audioCtx.createDelay(1.0);
+        delayNode.delayTime.value = 0.3;
+        feedbackNode = audioCtx.createGain();
+        feedbackNode.gain.value = 0.35;
+
+        // --- Connect the graph ---
+        mainGainNode.connect(dryGain);
+        dryGain.connect(audioCtx.destination);
+        mainGainNode.connect(chorusDelayNode);
+        chorusDelayNode.connect(delayNode);
+        delayNode.connect(feedbackNode);
+        feedbackNode.connect(delayNode); // Feedback loop
+        delayNode.connect(wetGain);
+        wetGain.connect(audioCtx.destination);
+
+    } catch (e) {
+        logToScreen(`Error creating audio context: ${e.message}`);
+    }
+}
+
+function playChord(ratioString, baseFreq = 130.8128) {
+    if (!audioCtx || !mainGainNode) {
+        logToScreen("Audio context not initialized. Cannot play chord.");
+        return;
+    }
+    if (audioCtx.state === 'suspended') {
+        logToScreen("AudioContext is suspended. Attempting to resume...");
+        audioCtx.resume().then(() => {
+            logToScreen(`AudioContext resumed. State: ${audioCtx.state}`);
+            // Now that it's resumed, try playing again.
+            playChord(ratioString, baseFreq);
+        });
+        return; // Stop this attempt, the resumed one will take over.
+    }
+
+    stopChord(); // Clear previous oscillators
+
+    const ratio = ratioString.split(':').map(Number);
+    if (ratio.length !== 4 || ratio.some(isNaN)) {
+        logToScreen(`Invalid ratio format: ${ratioString}`);
+        return;
+    }
+
+    const frequencies = ratio.map(r => baseFreq * (r / ratio[0]));
+    logToScreen(`Playing chord: ${ratioString}. Freqs: [${frequencies.map(f => f.toFixed(2)).join(', ')}]`);
+
+    for (const freq of frequencies) {
+        const osc = audioCtx.createOscillator();
+        osc.type = 'sawtooth';
+        osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+        osc.connect(mainGainNode);
+        osc.start();
+        oscillators.push(osc);
+    }
+
+    mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+    mainGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
+    mainGainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.05);
+}
+
+function stopChord() {
+    if (mainGainNode) {
+        mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
+        mainGainNode.gain.setValueAtTime(mainGainNode.gain.value, audioCtx.currentTime);
+        mainGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+    }
+
+    const oldOscillators = oscillators;
+    oscillators = [];
+    setTimeout(() => {
+        oldOscillators.forEach(osc => {
+            osc.stop();
+            osc.disconnect();
+        });
+    }, 500);
+}
+
+
 // Plasma Colormap function
 function plasmaColormap(value) {
     // Clamp value between 0 and 1
@@ -136,7 +263,89 @@ function makePointSprite(color, opacity) {
 }
 
 // --- CORE THREE.JS FUNCTIONS ---
+let isShiftHeld = false;
+let currentlyHovered = null; // To track the object the mouse is over
+let hasLoggedAnimate = false;
+
+function onKeyDown(event) {
+    if (event.key === 'Shift' && !isShiftHeld) {
+        isShiftHeld = true;
+        logToScreen("Shift key DOWN. Hover to play.");
+        // Disable pan on the controls when shift is held
+        if (controls) controls.enablePan = false;
+    }
+}
+
+function onKeyUp(event) {
+    if (event.key === 'Shift') {
+        isShiftHeld = false;
+        logToScreen("Shift key UP. Playback stopped.");
+        // Re-enable pan
+        if (controls) controls.enablePan = true;
+        
+        // If a chord is playing because we were hovering, stop it.
+        if (currentlyHovered) {
+            stopChord();
+            currentlyHovered = null;
+        }
+    }
+}
+
+function onMouseMove(event) {
+    // Only do work if the shift key is held down.
+    if (!isShiftHeld) {
+        // If shift is not held, ensure we are not tracking a hovered object.
+        if (currentlyHovered) {
+            stopChord();
+            currentlyHovered = null;
+        }
+        return;
+    }
+
+    // Initialize audio as it requires a user gesture, which this mouse move counts as.
+    initAudio();
+
+    // Perform raycasting based on mouse position
+    const mouse = new THREE.Vector2();
+    const canvasBounds = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
+    mouse.y = -((event.clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(currentSprites);
+
+    if (intersects.length > 0) {
+        const firstHit = intersects[0].object;
+        // Check if we are hovering over a NEW object
+        if (currentlyHovered !== firstHit) {
+            // If it's a valid new object, play its sound
+            if (firstHit.userData.ratio) {
+                logToScreen(`Hovering over: ${firstHit.userData.ratio}`);
+                currentlyHovered = firstHit;
+                playChord(firstHit.userData.ratio);
+            }
+            // If the new object has no ratio, just stop the old sound
+            else if (currentlyHovered) {
+                 logToScreen("Moved to an object with no ratio. Stopping sound.");
+                 stopChord();
+                 currentlyHovered = null;
+            }
+        }
+        // If we are still hovering over the same object, do nothing.
+    } else {
+        // If we moved off an object into empty space
+        if (currentlyHovered) {
+            logToScreen("Moved off object. Stopping sound.");
+            stopChord();
+            currentlyHovered = null;
+        }
+    }
+}
+
+
 function initThreeJS() {
+    logToScreen("initThreeJS() called.");
     const container = document.getElementById('container');
     // Remove any existing canvas from the container
     while (container.firstChild) {
@@ -162,7 +371,13 @@ function initThreeJS() {
     controls.minDistance = 1;
     controls.maxDistance = 30; // Allow further zoom out
 
+    // Event listeners for the new "shift-hover" interaction
+    logToScreen("Registering event listeners for SHIFT-HOVER interaction...");
+    window.addEventListener('keydown', onKeyDown, false);
+    window.addEventListener('keyup', onKeyUp, false);
+    renderer.domElement.addEventListener('mousemove', onMouseMove, false);
     window.addEventListener('resize', onWindowResize, false);
+    logToScreen("Event listeners registered.");
 }
 
 function onWindowResize() {
@@ -172,6 +387,10 @@ function onWindowResize() {
 }
 
 function animate() {
+    if (!hasLoggedAnimate) {
+        logToScreen("Animation loop has started.");
+        hasLoggedAnimate = true;
+    }
     requestAnimationFrame(animate);
     controls.update();
 
@@ -256,7 +475,7 @@ function transformToRegularTetrahedron(c1, c2, c3, max_val) {
 // --- TETRAHEDRON DATA GENERATION AND RENDERING ---
 async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves, base_size, scaling_factor, enable_size, enable_color, layout_display) {
     if (!python_ready) {
-        console.warn("Python environment not ready yet.");
+        logToScreen("Python environment not ready yet. Please wait.");
         return;
     }
     
@@ -366,10 +585,11 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
         }
         colors.push(displayColor.r, displayColor.g, displayColor.b);
 
+        const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
+        const label_text = labels_map.get(coords_key);
+
         // Add labels or points based on layout_display
         if (layout_display === 'labels') {
-            const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
-            const label_text = labels_map.get(coords_key);
             if (label_text) {
                 const sprite = makeTextSprite(label_text, { textColor: spriteTextColor });
                 sprite.position.set(transformed_x + 0.05, transformed_y + 0.05, transformed_z);
@@ -378,6 +598,7 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
                 sprite.userData.scalingFactor = scaling_factor;
                 sprite.userData.enableSize = enable_size;
                 sprite.userData.type = 'label'; // Add type to distinguish in animate
+                sprite.userData.ratio = label_text;
                 scene.add(sprite);
                 currentSprites.push(sprite);
             }
@@ -389,6 +610,9 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             sprite.userData.scalingFactor = scaling_factor;
             sprite.userData.enableSize = enable_size;
             sprite.userData.type = 'point'; // Add type to distinguish in animate
+            if (label_text) {
+                sprite.userData.ratio = label_text;
+            }
             scene.add(sprite);
             currentSprites.push(sprite);
         }
@@ -401,22 +625,22 @@ async function initPyodide() {
     pyodide = await loadPyodide({
         indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/",
     });
-    console.log("Pyodide loaded.");
+    logToScreen("Pyodide loaded.");
 
     // Redirect Python stdout/stderr to JS console
     pyodide.setStdout({
         write: (msg) => {
-            console.log("Python stdout:", msg);
+            logToScreen("Python stdout: " + msg);
         }
     });
     pyodide.setStderr({
         write: (msg) => {
-            console.error("Python stderr:", msg);
+            logToScreen("Python stderr: " + msg);
         }
     });
 
     await pyodide.loadPackage(["numpy", "scipy"]);
-    console.log("Numpy and Scipy loaded.");
+    logToScreen("Numpy and Scipy loaded.");
 
     pyodide.FS.mkdir("python");
     pyodide.FS.mkdir("python/theory");
@@ -752,7 +976,7 @@ def generate_ji_tetra_labels(limit_value, equave_ratio, limit_mode="odd", comple
         if l / i > equave_ratio_float:
             continue
             
-        if gcd(gcd(gcd(i, j), k), l) != 1:
+        if math.gcd(math.gcd(math.gcd(i, j), k), l) != 1:
             continue
 
         if limit_mode == "odd":
@@ -920,7 +1144,7 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     // Add current directory to Python path
     pyodide.runPython("import sys; sys.path.append('./python')");
     await pyodide.loadPackage("micropip"); // Install micropip first
-    console.log("Micropip loaded.");
+    logToScreen("Micropip loaded.");
     // The 'fractions' module is part of Python's standard library and does not need micropip.install.
     // It's included with Pyodide by default.
 
@@ -983,10 +1207,42 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
                 layoutDisplay
             );
         } else {
-            console.error("Invalid input for limit value, equave ratio, base size, or scaling factor.");
+            logToScreen("Invalid input for limit value, equave ratio, base size, or scaling factor.");
         }
     });
 }
 
 // Initial call to start the application
 initPyodide();
+
+// Add event listener for layout display change
+document.getElementById('layoutDisplay').addEventListener('change', async () => {
+    const limitValue = parseFloat(document.getElementById('limitValue').value);
+    const equaveRatio = parseFloat(document.getElementById('equaveRatio').value);
+    const complexityMethod = document.getElementById('complexityMethod').value;
+    const hideUnisonVoices = document.getElementById('hideUnisonVoices').checked;
+    const omitOctaves = document.getElementById('omitOctaves').checked;
+    const baseSize = parseFloat(document.getElementById('baseSize').value);
+    const scalingFactor = parseFloat(document.getElementById('scalingFactor').value);
+    const enableSize = document.getElementById('enableSize').checked;
+    const enableColor = document.getElementById('enableColor').checked;
+    const layoutDisplay = document.getElementById('layoutDisplay').value;
+    currentLayoutDisplay = layoutDisplay; // Update global variable
+
+    if (!isNaN(limitValue) && !isNaN(equaveRatio) && !isNaN(baseSize) && !isNaN(scalingFactor)) {
+        await updateTetrahedron(
+            limitValue, 
+            equaveRatio, 
+            complexityMethod, 
+            hideUnisonVoices, 
+            omitOctaves,
+            baseSize, 
+            scalingFactor,
+            enableSize,
+            enableColor,
+            layoutDisplay
+        );
+    } else {
+        logToScreen("Invalid input for limit value, equave ratio, base size, or scaling factor.");
+    }
+});
