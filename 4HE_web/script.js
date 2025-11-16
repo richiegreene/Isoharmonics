@@ -1111,10 +1111,14 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         isClickPlayModeActive = !isClickPlayModeActive; // Toggle the state
         if (isClickPlayModeActive) {
             playButton.classList.add('play-button-active');
-            if (controls) controls.enablePan = false; // Disable pan when play mode is active
+            if (controls) controls.enabled = false; // Disable OrbitControls to allow clicking on objects
         } else {
             playButton.classList.remove('play-button-active');
-            if (!isShiftHeld && controls) controls.enablePan = true; // Re-enable pan only if Shift is not held
+            if (controls) controls.enabled = true; // Re-enable OrbitControls
+            // Only re-enable pan if Shift is not held down
+            if (!isShiftHeld && controls) {
+                controls.enablePan = true;
+            }
             stopChord(); // Stop any playing chord
             currentlyHovered = null;
         }
