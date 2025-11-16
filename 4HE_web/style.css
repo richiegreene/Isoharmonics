@@ -84,6 +84,7 @@ body, html {
 .checkbox-row input[type="checkbox"] {
     width: auto; /* Allow checkbox to take its natural width */
     margin: 0; /* Remove default margin */
+    vertical-align: middle;
 }
 
 
@@ -111,4 +112,14 @@ body, html {
 
 #settings-menu button:hover {
     background-color: #6a6a6a;
+}
+
+#settings-menu button.play-button-active {
+    background-color: #007bff; /* A shade of blue */
+    border-color: #007bff;
+}
+
+#settings-menu button.play-button-active:hover {
+    background-color: #0056b3; /* Darker blue on hover */
+    border-color: #0056b3;
 }

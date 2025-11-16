@@ -7,6 +7,10 @@ let loadingOverlay = document.getElementById('loading-overlay');
 let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
+let isShiftHeld = false; // To track if Shift key is currently held down
+let isClickPlayModeActive = false; // To track if play mode is active via button click
+let currentlyHovered = null; // To track the object the mouse is over
+let playButton; // Declare playButton globally
 
 // --- AUDIO ENGINE ---
 let audioCtx;
@@ -207,25 +211,28 @@ function makePointSprite(color, opacity) {
 }
 
 // --- CORE THREE.JS FUNCTIONS ---
-let isShiftHeld = false;
-let currentlyHovered = null; // To track the object the mouse is over
+// isShiftHeld and currentlyHovered are now declared globally at the top of the file
 
 function onKeyDown(event) {
     if (event.key === 'Shift' && !isShiftHeld) {
         isShiftHeld = true;
         if (controls) controls.enablePan = false;
+        if (playButton) playButton.classList.add('play-button-active');
+        stopChord(); // Stop any current chord when Shift is pressed
     }
 }
 
 function onKeyUp(event) {
     if (event.key === 'Shift') {
         isShiftHeld = false;
-        if (controls) controls.enablePan = true;
-        
-        if (currentlyHovered) {
-            stopChord();
-            currentlyHovered = null;
+        if (!isClickPlayModeActive) { // Only enable pan if click play mode is not active
+            if (controls) controls.enablePan = true;
+            if (playButton) playButton.classList.remove('play-button-active');
+        } else {
+            // If click play mode is active, the button stays active
         }
+        stopChord(); // Stop any current chord when Shift is released
+        currentlyHovered = null; // Clear hovered object
     }
 }
 
@@ -269,6 +276,38 @@ function onMouseMove(event) {
     }
 }
 
+function onClick(event) {
+    if (!isClickPlayModeActive) {
+        // If click play mode is not active, do nothing
+        return;
+    }
+
+    // If Shift is held, we prefer hover interaction, so click does nothing
+    if (isShiftHeld) {
+        return;
+    }
+
+    initAudio();
+
+    const mouse = new THREE.Vector2();
+    const canvasBounds = renderer.domElement.getBoundingClientRect();
+    mouse.x = ((event.clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
+    mouse.y = -((event.clientY - canvasBounds.top) / canvasBounds.height) * 2 + 1;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(mouse, camera);
+    const intersects = raycaster.intersectObjects(currentSprites);
+
+    if (intersects.length > 0) {
+        const firstHit = intersects[0].object;
+        if (firstHit.userData.ratio) {
+            playChord(firstHit.userData.ratio);
+        }
+    } else {
+        stopChord(); // If clicked outside any object, stop current sound
+    }
+}
+
 
 function initThreeJS() {
     const container = document.getElementById('container');
@@ -297,6 +336,7 @@ function initThreeJS() {
     window.addEventListener('keydown', onKeyDown, false);
     window.addEventListener('keyup', onKeyUp, false);
     renderer.domElement.addEventListener('mousemove', onMouseMove, false);
+    renderer.domElement.addEventListener('click', onClick, false); // New click listener
     window.addEventListener('resize', onWindowResize, false);
 }
 
@@ -1051,6 +1091,8 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     const default_layout_display = document.getElementById('layoutDisplay').value;
     currentLayoutDisplay = default_layout_display; // Set global variable
 
+    playButton = document.getElementById('playButton'); // Get reference to the new play button
+
     await updateTetrahedron(
         default_limit_value, 
         default_equave_ratio, 
@@ -1063,6 +1105,20 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
         default_enable_color,
         default_layout_display
     );
+
+    // Add event listener for the play button
+    playButton.addEventListener('click', () => {
+        isClickPlayModeActive = !isClickPlayModeActive; // Toggle the state
+        if (isClickPlayModeActive) {
+            playButton.classList.add('play-button-active');
+            if (controls) controls.enablePan = false; // Disable pan when play mode is active
+        } else {
+            playButton.classList.remove('play-button-active');
+            if (!isShiftHeld && controls) controls.enablePan = true; // Re-enable pan only if Shift is not held
+            stopChord(); // Stop any playing chord
+            currentlyHovered = null;
+        }
+    });
 
     // Add event listener for the update button
     document.getElementById('updateButton').addEventListener('click', async () => {
