@@ -1100,6 +1100,27 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
 // Initial call to start the application
 initPyodide();
 
+// --- Settings Menu Collapse/Expand ---
+const settingsHeader = document.getElementById('settings-header');
+const settingsContent = document.getElementById('settings-content');
+const toggleIcon = settingsHeader.querySelector('.toggle-icon');
+
+settingsHeader.addEventListener('click', () => {
+    const isCollapsed = settingsHeader.classList.toggle('collapsed');
+    if (isCollapsed) {
+        settingsContent.style.display = 'none';
+        toggleIcon.textContent = '▶'; // Right arrow when collapsed
+    } else {
+        settingsContent.style.display = 'grid'; // Or 'block', depending on its default display
+        toggleIcon.textContent = '▼'; // Down arrow when expanded
+    }
+});
+
+// Initially set to collapsed state
+settingsHeader.classList.add('collapsed');
+settingsContent.style.display = 'none';
+toggleIcon.textContent = '▶';
+
 // Add event listener for layout display change
 document.getElementById('layoutDisplay').addEventListener('change', async () => {
     const limitValue = parseFloat(document.getElementById('limitValue').value);
