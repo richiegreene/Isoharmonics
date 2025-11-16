@@ -110,7 +110,6 @@ function stopChord() {
     }, 50); // Cleanup after 50ms
 }
 
-
 // Plasma Colormap function
 function plasmaColormap(value) {
     // Clamp value between 0 and 1
@@ -142,7 +141,6 @@ function plasmaColormap(value) {
     if (value === 1) {
         i = stops.length - 2; // This ensures endColor is colors[stops.length - 1]
     }
-
 
     const startColor = colors[i];
     const endColor = colors[i + 1];
@@ -176,7 +174,6 @@ function createCircleTexture() {
 const circleTexture = createCircleTexture();
 
 // --- HELPER FUNCTIONS ---
-
 function makeTextSprite(message, parameters) {
 
     if ( parameters === undefined ) parameters = {};
@@ -228,10 +225,7 @@ function roundRect(ctx, x, y, w, h, r) {
 
 }
 
-
-
 // Function to create a circular point sprite
-
 function makePointSprite(color, opacity) {
 
     const spriteMaterial = new THREE.SpriteMaterial({
@@ -248,8 +242,6 @@ function makePointSprite(color, opacity) {
 
 }
 
-
-
 function updatePivotButtonSelection(selectedIndex) {
 
     if (!pivotButtons) return; // Ensure buttons are initialized
@@ -264,8 +256,6 @@ function updatePivotButtonSelection(selectedIndex) {
     });
     currentPivotVoiceIndex = selectedIndex; // Update the global variable
 }
-
-
 
 // --- CORE THREE.JS FUNCTIONS ---
 // isShiftHeld and currentlyHovered are now declared globally at the top of the file
@@ -1169,7 +1159,6 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     });
 
     // Add event listener for the play button
-
     await updateTetrahedron(
         default_limit_value, 
         default_equave_ratio, 
