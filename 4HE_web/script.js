@@ -1232,6 +1232,16 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
             console.error("Invalid input for limit value, equave ratio, base size, or scaling factor.");
         }
     });
+
+    // Add keydown event listener for 'Enter' key to trigger update
+    document.addEventListener('keydown', (event) => {
+        // Check if the event target is an input field to avoid triggering on every enter
+        const tagName = event.target.tagName;
+        if (event.key === 'Enter' && tagName !== 'INPUT' && tagName !== 'TEXTAREA') {
+            event.preventDefault(); // Prevent default action (e.g., submitting a form)
+            document.getElementById('updateButton').click(); // Programmatically click the update button
+        }
+    });
 }
 
 // Initial call to start the application
