@@ -90,14 +90,14 @@ function playChord(ratioString) {
 
     mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
     mainGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    mainGainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.01); // 10ms fade-in
+    mainGainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.5); // fade-in
 }
 
 function stopChord() {
     if (mainGainNode) {
         mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         mainGainNode.gain.setValueAtTime(mainGainNode.gain.value, audioCtx.currentTime);
-        mainGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.01); // 10ms fade-out
+        mainGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.5); // fade-out
     }
 
     const oldOscillators = oscillators;
