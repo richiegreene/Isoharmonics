@@ -8,100 +8,44 @@ let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
-// --- LOGGING UTILITY ---
-function logToScreen(message) {
-    const logDisplay = document.getElementById('log-display');
-    if (logDisplay) {
-        const logEntry = document.createElement('p');
-        logEntry.textContent = `> ${message}`;
-        logDisplay.appendChild(logEntry);
-        // Auto-scroll to the bottom
-        logDisplay.scrollTop = logDisplay.scrollHeight;
-    }
-    // Also log to the actual console for good measure
-    console.log(message);
-}
-
 // --- AUDIO ENGINE ---
 let audioCtx;
 let oscillators = [];
 let mainGainNode;
-// Persistent effect nodes
-let dryGain, wetGain, delayNode, feedbackNode, chorusDelayNode, lfoNode, lfoGainNode;
 
 function initAudio() {
     if (audioCtx) return; // Already initialized
     try {
         audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-        logToScreen(`AudioContext created. State: ${audioCtx.state}`);
-
-        // --- Create persistent effects chain ---
+        // --- Create a simple master gain node ---
         mainGainNode = audioCtx.createGain();
-
-        // Mix gains
-        dryGain = audioCtx.createGain();
-        dryGain.gain.value = 0.7; // 70% dry
-        wetGain = audioCtx.createGain();
-        wetGain.gain.value = 0.3; // 30% wet
-
-        // Chorus effect
-        chorusDelayNode = audioCtx.createDelay(0.1);
-        chorusDelayNode.delayTime.value = 0.005; // 5ms
-        lfoNode = audioCtx.createOscillator();
-        lfoNode.type = 'sine';
-        lfoNode.frequency.value = 5; // 5Hz
-        lfoGainNode = audioCtx.createGain();
-        lfoGainNode.gain.value = 0.003; // 3ms depth
-        lfoNode.connect(lfoGainNode);
-        lfoGainNode.connect(chorusDelayNode.delayTime);
-        lfoNode.start();
-
-        // Echo effect
-        delayNode = audioCtx.createDelay(1.0);
-        delayNode.delayTime.value = 0.3;
-        feedbackNode = audioCtx.createGain();
-        feedbackNode.gain.value = 0.35;
-
-        // --- Connect the graph ---
-        mainGainNode.connect(dryGain);
-        dryGain.connect(audioCtx.destination);
-        mainGainNode.connect(chorusDelayNode);
-        chorusDelayNode.connect(delayNode);
-        delayNode.connect(feedbackNode);
-        feedbackNode.connect(delayNode); // Feedback loop
-        delayNode.connect(wetGain);
-        wetGain.connect(audioCtx.destination);
-
+        mainGainNode.connect(audioCtx.destination);
     } catch (e) {
-        logToScreen(`Error creating audio context: ${e.message}`);
+        console.error(`Error creating audio context: ${e.message}`);
     }
 }
 
 function playChord(ratioString, baseFreq = 130.8128) {
     if (!audioCtx || !mainGainNode) {
-        logToScreen("Audio context not initialized. Cannot play chord.");
+        console.error("Audio context not initialized. Cannot play chord.");
         return;
     }
     if (audioCtx.state === 'suspended') {
-        logToScreen("AudioContext is suspended. Attempting to resume...");
         audioCtx.resume().then(() => {
-            logToScreen(`AudioContext resumed. State: ${audioCtx.state}`);
-            // Now that it's resumed, try playing again.
             playChord(ratioString, baseFreq);
         });
-        return; // Stop this attempt, the resumed one will take over.
+        return;
     }
 
     stopChord(); // Clear previous oscillators
 
     const ratio = ratioString.split(':').map(Number);
     if (ratio.length !== 4 || ratio.some(isNaN)) {
-        logToScreen(`Invalid ratio format: ${ratioString}`);
+        console.error(`Invalid ratio format: ${ratioString}`);
         return;
     }
 
     const frequencies = ratio.map(r => baseFreq * (r / ratio[0]));
-    logToScreen(`Playing chord: ${ratioString}. Freqs: [${frequencies.map(f => f.toFixed(2)).join(', ')}]`);
 
     for (const freq of frequencies) {
         const osc = audioCtx.createOscillator();
@@ -114,14 +58,14 @@ function playChord(ratioString, baseFreq = 130.8128) {
 
     mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
     mainGainNode.gain.setValueAtTime(0, audioCtx.currentTime);
-    mainGainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.05);
+    mainGainNode.gain.linearRampToValueAtTime(0.15, audioCtx.currentTime + 0.01); // 10ms fade-in
 }
 
 function stopChord() {
     if (mainGainNode) {
         mainGainNode.gain.cancelScheduledValues(audioCtx.currentTime);
         mainGainNode.gain.setValueAtTime(mainGainNode.gain.value, audioCtx.currentTime);
-        mainGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.2);
+        mainGainNode.gain.linearRampToValueAtTime(0, audioCtx.currentTime + 0.01); // 10ms fade-out
     }
 
     const oldOscillators = oscillators;
@@ -131,7 +75,7 @@ function stopChord() {
             osc.stop();
             osc.disconnect();
         });
-    }, 500);
+    }, 50); // Cleanup after 50ms
 }
 
 
@@ -265,13 +209,10 @@ function makePointSprite(color, opacity) {
 // --- CORE THREE.JS FUNCTIONS ---
 let isShiftHeld = false;
 let currentlyHovered = null; // To track the object the mouse is over
-let hasLoggedAnimate = false;
 
 function onKeyDown(event) {
     if (event.key === 'Shift' && !isShiftHeld) {
         isShiftHeld = true;
-        logToScreen("Shift key DOWN. Hover to play.");
-        // Disable pan on the controls when shift is held
         if (controls) controls.enablePan = false;
     }
 }
@@ -279,11 +220,8 @@ function onKeyDown(event) {
 function onKeyUp(event) {
     if (event.key === 'Shift') {
         isShiftHeld = false;
-        logToScreen("Shift key UP. Playback stopped.");
-        // Re-enable pan
         if (controls) controls.enablePan = true;
         
-        // If a chord is playing because we were hovering, stop it.
         if (currentlyHovered) {
             stopChord();
             currentlyHovered = null;
@@ -292,9 +230,7 @@ function onKeyUp(event) {
 }
 
 function onMouseMove(event) {
-    // Only do work if the shift key is held down.
     if (!isShiftHeld) {
-        // If shift is not held, ensure we are not tracking a hovered object.
         if (currentlyHovered) {
             stopChord();
             currentlyHovered = null;
@@ -302,10 +238,8 @@ function onMouseMove(event) {
         return;
     }
 
-    // Initialize audio as it requires a user gesture, which this mouse move counts as.
     initAudio();
 
-    // Perform raycasting based on mouse position
     const mouse = new THREE.Vector2();
     const canvasBounds = renderer.domElement.getBoundingClientRect();
     mouse.x = ((event.clientX - canvasBounds.left) / canvasBounds.width) * 2 - 1;
@@ -317,26 +251,18 @@ function onMouseMove(event) {
 
     if (intersects.length > 0) {
         const firstHit = intersects[0].object;
-        // Check if we are hovering over a NEW object
         if (currentlyHovered !== firstHit) {
-            // If it's a valid new object, play its sound
             if (firstHit.userData.ratio) {
-                logToScreen(`Hovering over: ${firstHit.userData.ratio}`);
                 currentlyHovered = firstHit;
                 playChord(firstHit.userData.ratio);
             }
-            // If the new object has no ratio, just stop the old sound
             else if (currentlyHovered) {
-                 logToScreen("Moved to an object with no ratio. Stopping sound.");
                  stopChord();
                  currentlyHovered = null;
             }
         }
-        // If we are still hovering over the same object, do nothing.
     } else {
-        // If we moved off an object into empty space
         if (currentlyHovered) {
-            logToScreen("Moved off object. Stopping sound.");
             stopChord();
             currentlyHovered = null;
         }
@@ -345,9 +271,7 @@ function onMouseMove(event) {
 
 
 function initThreeJS() {
-    logToScreen("initThreeJS() called.");
     const container = document.getElementById('container');
-    // Remove any existing canvas from the container
     while (container.firstChild) {
         container.removeChild(container.firstChild);
     }
@@ -356,28 +280,24 @@ function initThreeJS() {
     scene.background = new THREE.Color(0x000000);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    // Adjusted camera position for a "bird's eye view" with apex up
-    camera.position.set(0, 3, 6); // x, y, z
-    camera.lookAt(0, 0, 0); // Ensure camera looks at the center of the scene
+    camera.position.set(0, 3, 6);
+    camera.lookAt(0, 0, 0);
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    container.appendChild(renderer.domElement); // Use the container variable
+    container.appendChild(renderer.domElement);
 
     controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.25;
     controls.screenSpacePanning = false;
     controls.minDistance = 1;
-    controls.maxDistance = 30; // Allow further zoom out
+    controls.maxDistance = 30;
 
-    // Event listeners for the new "shift-hover" interaction
-    logToScreen("Registering event listeners for SHIFT-HOVER interaction...");
     window.addEventListener('keydown', onKeyDown, false);
     window.addEventListener('keyup', onKeyUp, false);
     renderer.domElement.addEventListener('mousemove', onMouseMove, false);
     window.addEventListener('resize', onWindowResize, false);
-    logToScreen("Event listeners registered.");
 }
 
 function onWindowResize() {
@@ -387,34 +307,29 @@ function onWindowResize() {
 }
 
 function animate() {
-    if (!hasLoggedAnimate) {
-        logToScreen("Animation loop has started.");
-        hasLoggedAnimate = true;
-    }
     requestAnimationFrame(animate);
     controls.update();
 
-    // Dynamic scaling for sprites (labels and points) to maintain constant screen size
     if (currentLayoutDisplay === 'labels' || currentLayoutDisplay === 'points') {
         currentSprites.forEach(sprite => {
             const distance = camera.position.distanceTo(sprite.position);
-            let currentSpriteSize = 0.5; // Default base screen size for sprite
+            let currentSpriteSize = 0.5;
 
             if (sprite.userData.type === 'label') {
                 if (sprite.userData.enableSize) {
-                    const baseScreenSize = sprite.userData.baseSize * 0.5; // Multiplier for labels
+                    const baseScreenSize = sprite.userData.baseSize * 0.5;
                     const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
                     currentSpriteSize = Math.max(baseScreenSize, scaledSize);
                 } else {
-                    currentSpriteSize = sprite.userData.baseSize * 0.5; // Uniform size for labels
+                    currentSpriteSize = sprite.userData.baseSize * 0.5;
                 }
             } else if (sprite.userData.type === 'point') {
                 if (sprite.userData.enableSize) {
-                    const baseScreenSize = sprite.userData.baseSize * 0.01; // Multiplier for points, adjust as needed
+                    const baseScreenSize = sprite.userData.baseSize * 0.01;
                     const scaledSize = baseScreenSize + (sprite.userData.normalizedComplexity * baseScreenSize * (sprite.userData.scalingFactor - 1));
                     currentSpriteSize = Math.max(baseScreenSize, scaledSize);
                 } else {
-                    currentSpriteSize = sprite.userData.baseSize * 0.01; // Uniform size for points
+                    currentSpriteSize = sprite.userData.baseSize * 0.01;
                 }
             }
             
@@ -427,46 +342,30 @@ function animate() {
 
 // Transformation function for an apex-up regular tetrahedron
 function transformToRegularTetrahedron(c1, c2, c3, max_val) {
-    // Normalize coordinates to a 0-1 range based on max_val (equave_ratio)
     const u = c1 / max_val;
     const v = c2 / max_val;
     const w = c3 / max_val;
 
-    const side_length = 3.0; // Desired side length of the visual tetrahedron
-    const L = side_length; // Side length of the regular tetrahedron
+    const side_length = 3.0;
+    const L = side_length;
 
-    // Calculate height and radius for the regular tetrahedron
-    const h_apex = L * Math.sqrt(2/3); // Height of a regular tetrahedron
-    const r_base = L * Math.sqrt(3)/3; // Distance from center of base to a vertex
-
-    // Vertices of a regular tetrahedron (apex up, base centered on XY plane):
-    // Apex: (0,0,h_apex)
-    // Base vertices (equilateral triangle in XY plane):
-    // T_base1: (r_base, 0, 0)
-    // T_base2: (r_base * Math.cos(2*Math.PI/3), r_base * Math.sin(2*Math.PI/3), 0)
-    // T_base3: (r_base * Math.cos(4*Math.PI/3), r_base * Math.sin(4*Math.PI/3), 0)
+    const h_apex = L * Math.sqrt(2/3);
+    const r_base = L * Math.sqrt(3)/3;
     
     const T_apex = new THREE.Vector3(0, 0, h_apex);
     const T_base1 = new THREE.Vector3(r_base, 0, 0); 
     const T_base2 = new THREE.Vector3(r_base * Math.cos(2*Math.PI/3), r_base * Math.sin(2*Math.PI/3), 0);
     const T_base3 = new THREE.Vector3(r_base * Math.cos(4*Math.PI/3), r_base * Math.sin(4*Math.PI/3), 0);
 
-    // Barycentric mapping: P_transformed = (1-u-v-w)*T_apex + u*T_base1 + v*T_base2 + w*T_base3
-    // This makes (0,0,0) (u=0,v=0,w=0) map to the Apex
-    // and points along the axes (1,0,0), (0,1,0), (0,0,1) map to points on the base.
-    
-    // Calculate barycentric weights for the original simplex corners
-    const a0 = 1 - u - v - w; // Weight for the (0,0,0) corner of the original simplex
-    const a1 = u;             // Weight for the (1,0,0) corner
-    const a2 = v;             // Weight for the (0,1,0) corner
-    const a3 = w;             // Weight for the (0,0,1) corner
+    const a0 = 1 - u - v - w;
+    const a1 = u;
+    const a2 = v;
+    const a3 = w;
 
     const x_transformed = a0 * T_apex.x + a1 * T_base1.x + a2 * T_base2.x + a3 * T_base3.x;
     const y_transformed = a0 * T_apex.y + a1 * T_base1.y + a2 * T_base2.y + a3 * T_base3.y;
     const z_transformed = a0 * T_apex.z + a1 * T_base1.z + a2 * T_base2.z + a3 * T_base3.z;
     
-    // Offset the entire tetrahedron so its base is near Y=0 or origin for more central viewing
-    // The current Z axis is vertical, so offset Y (vertical in screen space by default)
     const overall_vertical_offset = -h_apex / 2; 
 
     return [x_transformed, y_transformed, z_transformed + overall_vertical_offset];
@@ -475,25 +374,20 @@ function transformToRegularTetrahedron(c1, c2, c3, max_val) {
 // --- TETRAHEDRON DATA GENERATION AND RENDERING ---
 async function updateTetrahedron(limit_value, equave_ratio, complexity_method, hide_unison_voices, omit_octaves, base_size, scaling_factor, enable_size, enable_color, layout_display) {
     if (!python_ready) {
-        logToScreen("Python environment not ready yet. Please wait.");
+        console.warn("Python environment not ready yet. Please wait.");
         return;
     }
     
-    // Clear previous points and labels
     while(scene.children.length > 0){ 
         scene.remove(scene.children[0]); 
     }
-    currentSprites = []; // Clear sprites array
+    currentSprites = [];
 
-    // Calculate max_cents dynamically based on equave_ratio
     const max_cents_value = 1200 * Math.log2(equave_ratio);
 
-    // Set global Python variables for boolean flags
     pyodide.globals.set("py_hide_unison_voices", hide_unison_voices);
     pyodide.globals.set("py_omit_octaves", omit_octaves);
 
-    // Call the Python function to get points (c1, c2, c3, complexity)
-    // and labels (c1, c2, c3), label, complexity
     const points_py_code = `
         from tetrahedron_generator import generate_odd_limit_points
         generate_odd_limit_points(
@@ -520,7 +414,6 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
     const raw_points_data = await pyodide.runPythonAsync(points_py_code);
     const raw_labels_data = await pyodide.runPythonAsync(labels_py_code);
 
-    // Process raw_points_data for Three.js points
     const positions = [];
     const colors = [];
     const color = new THREE.Color();
@@ -534,18 +427,15 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
         });
     }
 
-    // Create a Map for quick lookup of labels by coordinates (before transformation)
     const labels_map = new Map();
     raw_labels_data.forEach(label_item => {
-        // Use original c1, c2, c3 for key as Python returns these
         const coords_key = `${label_item[0][0].toFixed(2)},${label_item[0][1].toFixed(2)},${label_item[0][2].toFixed(2)}`;
-        labels_map.set(coords_key, label_item[1]); // Store label string
+        labels_map.set(coords_key, label_item[1]);
     });
 
 
-    // Define conversion factors for GUI baseSize to internal base sizes
-    const label_conversion_factor = 0.066; // GUI baseSize 1 -> internal 0.0033 * 400
-    const point_conversion_factor = 2.5;      // GUI baseSize 1 -> internal 5 * 10
+    const label_conversion_factor = 0.066;
+    const point_conversion_factor = 2.5;
 
     const internal_label_base_size = base_size * label_conversion_factor;
     const internal_point_base_size = base_size * point_conversion_factor;
@@ -555,40 +445,36 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
         const c2 = p[1];
         const c3 = p[2];
         
-        // Apply transformation for a more regular tetrahedron appearance
         const [transformed_x, transformed_y, transformed_z] = transformToRegularTetrahedron(c1, c2, c3, max_cents_value);
 
         positions.push(transformed_x, transformed_y, transformed_z);
 
         let normalizedComplexity = (p[3] - minComplexity) / (maxComplexity - minComplexity);
         
-        // Invert normalizedComplexity for sizing and coloring: least complex (0) -> 1, most complex (1) -> 0
         let invertedComplexity = 1 - normalizedComplexity;
 
         let displayColor = new THREE.Color();
-        let spriteTextColor = { r:255, g:255, b:255, a:1.0 }; // Default white
-        let spritePointColor = new THREE.Color(1, 1, 1); // Default white for points
+        let spriteTextColor = { r:255, g:255, b:255, a:1.0 };
+        let spritePointColor = new THREE.Color(1, 1, 1);
         let spritePointOpacity = 0.7;
 
         if (enable_color) {
-            // Apply scaling factor to invertedComplexity
             let scaledComplexity = invertedComplexity * scaling_factor;
-            scaledComplexity = Math.min(1, Math.max(0, scaledComplexity)); // Clamp between 0 and 1
+            scaledComplexity = Math.min(1, Math.max(0, scaledComplexity));
             
             const plasmaColor = plasmaColormap(scaledComplexity);
             displayColor.setRGB(plasmaColor.r, plasmaColor.g, plasmaColor.b);
             spriteTextColor = { r: plasmaColor.r * 255, g: plasmaColor.g * 255, b: plasmaColor.b * 255, a:1.0 };
             spritePointColor.setRGB(plasmaColor.r, plasmaColor.g, plasmaColor.b);
         } else {
-            displayColor.setRGB(1, 1, 1); // White
-            spritePointColor.setRGB(1, 1, 1); // White
+            displayColor.setRGB(1, 1, 1);
+            spritePointColor.setRGB(1, 1, 1);
         }
         colors.push(displayColor.r, displayColor.g, displayColor.b);
 
         const coords_key = `${p[0].toFixed(2)},${p[1].toFixed(2)},${p[2].toFixed(2)}`;
         const label_text = labels_map.get(coords_key);
 
-        // Add labels or points based on layout_display
         if (layout_display === 'labels') {
             if (label_text) {
                 const sprite = makeTextSprite(label_text, { textColor: spriteTextColor });
@@ -597,19 +483,19 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
                 sprite.userData.baseSize = internal_label_base_size;
                 sprite.userData.scalingFactor = scaling_factor;
                 sprite.userData.enableSize = enable_size;
-                sprite.userData.type = 'label'; // Add type to distinguish in animate
+                sprite.userData.type = 'label';
                 sprite.userData.ratio = label_text;
                 scene.add(sprite);
                 currentSprites.push(sprite);
             }
         } else if (layout_display === 'points') {
             const sprite = makePointSprite(spritePointColor, spritePointOpacity);
-            sprite.position.set(transformed_x, transformed_y, transformed_z); // No offset for points
+            sprite.position.set(transformed_x, transformed_y, transformed_z);
             sprite.userData.normalizedComplexity = invertedComplexity;
-            sprite.userData.baseSize = internal_point_base_size; // Use internal point base size
+            sprite.userData.baseSize = internal_point_base_size;
             sprite.userData.scalingFactor = scaling_factor;
             sprite.userData.enableSize = enable_size;
-            sprite.userData.type = 'point'; // Add type to distinguish in animate
+            sprite.userData.type = 'point';
             if (label_text) {
                 sprite.userData.ratio = label_text;
             }
@@ -625,22 +511,21 @@ async function initPyodide() {
     pyodide = await loadPyodide({
         indexURL: "https://cdn.jsdelivr.net/pyodide/v0.25.0/full/",
     });
-    logToScreen("Pyodide loaded.");
+    console.log("Pyodide loaded.");
 
-    // Redirect Python stdout/stderr to JS console
     pyodide.setStdout({
         write: (msg) => {
-            logToScreen("Python stdout: " + msg);
+            console.log("Python stdout:", msg);
         }
     });
     pyodide.setStderr({
         write: (msg) => {
-            logToScreen("Python stderr: " + msg);
+            console.error("Python stderr:", msg);
         }
     });
 
     await pyodide.loadPackage(["numpy", "scipy"]);
-    logToScreen("Numpy and Scipy loaded.");
+    console.log("Numpy and Scipy loaded.");
 
     pyodide.FS.mkdir("python");
     pyodide.FS.mkdir("python/theory");
@@ -1144,7 +1029,7 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     // Add current directory to Python path
     pyodide.runPython("import sys; sys.path.append('./python')");
     await pyodide.loadPackage("micropip"); // Install micropip first
-    logToScreen("Micropip loaded.");
+    console.log("Micropip loaded.");
     // The 'fractions' module is part of Python's standard library and does not need micropip.install.
     // It's included with Pyodide by default.
 
@@ -1207,7 +1092,7 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
                 layoutDisplay
             );
         } else {
-            logToScreen("Invalid input for limit value, equave ratio, base size, or scaling factor.");
+            console.error("Invalid input for limit value, equave ratio, base size, or scaling factor.");
         }
     });
 }
@@ -1243,6 +1128,6 @@ document.getElementById('layoutDisplay').addEventListener('change', async () => 
             layoutDisplay
         );
     } else {
-        logToScreen("Invalid input for limit value, equave ratio, base size, or scaling factor.");
+        console.error("Invalid input for limit value, equave ratio, base size, or scaling factor.");
     }
 });
