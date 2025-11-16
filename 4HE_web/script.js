@@ -148,7 +148,7 @@ function initThreeJS() {
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     // Adjusted camera position for a "bird's eye view" with apex up
-    camera.position.set(0, 8, 15); // x, y, z
+    camera.position.set(0, 3, 6); // x, y, z
     camera.lookAt(0, 0, 0); // Ensure camera looks at the center of the scene
 
     renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -930,8 +930,8 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     initThreeJS(); // Calls the *single* definition of initThreeJS
     animate();
     
-    const default_limit_value = 5;
-    const default_equave_ratio = 2; // Default to octave
+    const default_limit_value = parseFloat(document.getElementById('limitValue').value);
+    const default_equave_ratio = parseFloat(document.getElementById('equaveRatio').value); // Default to octave
     const default_complexity_method = "Tenney"; // Default complexity method
     const default_hide_unison_voices = false;
     const default_omit_octaves = false;
