@@ -148,3 +148,50 @@ body, html {
     display: inline-block;
     box-sizing: content-box;
 }
+
+/* New styles for pivot buttons */
+.settings-row {
+    grid-column: 1 / -1; /* Span across both columns */
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.settings-row label {
+    flex-shrink: 0; /* Prevent label from shrinking */
+    font-size: 13px;
+    white-space: nowrap;
+}
+
+.pivot-buttons {
+    display: flex;
+    gap: 5px;
+    flex-grow: 1; /* Allow buttons to take available space */
+}
+
+.pivot-button {
+    flex-grow: 1; /* Make buttons grow to fill space */
+    padding: 5px 10px;
+    border: 1px solid #555;
+    border-radius: 4px;
+    background-color: #5a5a5a;
+    color: #fff;
+    cursor: pointer;
+    font-size: 13px;
+    text-align: center;
+}
+
+.pivot-button:hover {
+    background-color: #6a6a6a;
+}
+
+.pivot-button.selected {
+    background-color: #007bff; /* Blue for selected */
+    border-color: #007bff;
+}
+
+.pivot-button.selected:hover {
+    background-color: #0056b3;
+    border-color: #0056b3;
+}

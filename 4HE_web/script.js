@@ -11,6 +11,11 @@ let isShiftHeld = false; // To track if Shift key is currently held down
 let isClickPlayModeActive = false; // To track if play mode is active via button click
 let currentlyHovered = null; // To track the object the mouse is over
 let playButton; // Declare playButton globally
+let pivotButtons; // Declare pivotButtons globally
+let currentPivotVoiceIndex = 0; // 0: Bass, 1: Tenor, 2: Alto, 3: Soprano (default Bass)
+let lastPlayedFrequencies = [];
+let lastPlayedRatios = [];
+const initialBaseFreq = 130.8128; // The fixed base frequency for the very first chord
 
 // --- AUDIO ENGINE ---
 let audioCtx;
@@ -29,14 +34,14 @@ function initAudio() {
     }
 }
 
-function playChord(ratioString, baseFreq = 130.8128) {
+function playChord(ratioString) {
     if (!audioCtx || !mainGainNode) {
         console.error("Audio context not initialized. Cannot play chord.");
         return;
     }
     if (audioCtx.state === 'suspended') {
         audioCtx.resume().then(() => {
-            playChord(ratioString, baseFreq);
+            playChord(ratioString);
         });
         return;
     }
@@ -49,7 +54,30 @@ function playChord(ratioString, baseFreq = 130.8128) {
         return;
     }
 
-    const frequencies = ratio.map(r => baseFreq * (r / ratio[0]));
+    let effectiveBaseFreq;
+
+    if (lastPlayedFrequencies.length === 0) {
+        // First chord, or no previous chord to pivot from
+        effectiveBaseFreq = initialBaseFreq;
+    } else {
+        // Calculate baseFreq based on pivot
+        const pivotFreqFromPrevChord = lastPlayedFrequencies[currentPivotVoiceIndex];
+        const ratioComponentAtPivot = ratio[currentPivotVoiceIndex];
+        const firstRatioComponent = ratio[0];
+        
+        if (ratioComponentAtPivot === 0) {
+            console.warn("Ratio component at pivot is zero, cannot calculate pivot. Using initial base frequency.");
+            effectiveBaseFreq = initialBaseFreq;
+        } else {
+            effectiveBaseFreq = (pivotFreqFromPrevChord * firstRatioComponent) / ratioComponentAtPivot;
+        }
+    }
+
+    const frequencies = ratio.map(r => effectiveBaseFreq * (r / ratio[0]));
+
+    // Store current chord's data for next pivot calculation
+    lastPlayedFrequencies = frequencies;
+    lastPlayedRatios = ratio;
 
     for (const freq of frequencies) {
         const osc = audioCtx.createOscillator();
@@ -148,67 +176,154 @@ function createCircleTexture() {
 const circleTexture = createCircleTexture();
 
 // --- HELPER FUNCTIONS ---
+
 function makeTextSprite(message, parameters) {
+
     if ( parameters === undefined ) parameters = {};
+
     const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
+
     const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 40;
+
     const borderThickness = 0; // No border
+
     const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
 
+
+
     const canvas = document.createElement('canvas');
+
     const context = canvas.getContext('2d');
+
     context.font = fontsize + "px " + fontface; // Removed "Bold "
+
     
+
     const metrics = context.measureText( message );
+
     const textWidth = metrics.width;
 
+
+
     canvas.width = textWidth + borderThickness * 2;
+
     canvas.height = fontsize * 1.4 + borderThickness * 2;
 
+
+
     context.font = fontsize + "px " + fontface; // Removed "Bold "
+
     context.textAlign = "center";
+
     context.textBaseline = "middle";
 
+
+
     context.fillStyle = "rgba(" + textColor.r + ", " + textColor.g + ", " + textColor.b + ", 1.0)";
+
     context.fillText( message, canvas.width / 2, canvas.height / 2);
 
+
+
     const texture = new THREE.Texture(canvas) 
+
     texture.needsUpdate = true;
 
+
+
     const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
+
     const sprite = new THREE.Sprite( spriteMaterial );
+
     sprite.scale.set(canvas.width / fontsize, canvas.height / fontsize, 1.0); // Adjust scale based on canvas size, more neutral
+
     return sprite;  
+
 }
+
+
 
 function roundRect(ctx, x, y, w, h, r) {
+
     ctx.beginPath();
+
     ctx.moveTo(x+r, y);
+
     ctx.lineTo(x+w-r, y);
+
     ctx.quadraticCurveTo(x+w, y, x+w, y+r);
+
     ctx.lineTo(x+w, y+h-r);
+
     ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
+
     ctx.lineTo(x+r, y+h);
+
     ctx.quadraticCurveTo(x, y+h, x, y+h-r);
+
     ctx.lineTo(x, y+r);
+
     ctx.quadraticCurveTo(x, y, x+r, y);
+
     ctx.closePath();
+
     ctx.fill();
+
     ctx.stroke();   
+
 }
 
+
+
 // Function to create a circular point sprite
+
 function makePointSprite(color, opacity) {
+
     const spriteMaterial = new THREE.SpriteMaterial({
+
         map: circleTexture,
+
         color: color,
+
         transparent: true,
+
         opacity: opacity,
+
         alphaTest: 0.1 // Use alphaTest for transparency
+
     });
+
     const sprite = new THREE.Sprite(spriteMaterial);
+
     return sprite;
+
 }
+
+
+
+function updatePivotButtonSelection(selectedIndex) {
+
+    if (!pivotButtons) return; // Ensure buttons are initialized
+
+    pivotButtons.forEach(button => {
+
+        if (parseInt(button.dataset.pivotIndex) === selectedIndex) {
+
+            button.classList.add('selected');
+
+        } else {
+
+            button.classList.remove('selected');
+
+        }
+
+    });
+
+    currentPivotVoiceIndex = selectedIndex; // Update the global variable
+
+}
+
+
 
 // --- CORE THREE.JS FUNCTIONS ---
 // isShiftHeld and currentlyHovered are now declared globally at the top of the file
@@ -219,6 +334,17 @@ function onKeyDown(event) {
         if (controls) controls.enablePan = false;
         if (playButton) playButton.classList.add('play-button-active');
         stopChord(); // Stop any current chord when Shift is pressed
+    } else if (['S', 'A', 'T', 'B'].includes(event.key.toUpperCase())) {
+        let selectedIndex;
+        switch (event.key.toUpperCase()) {
+            case 'S': selectedIndex = 3; break;
+            case 'A': selectedIndex = 2; break;
+            case 'T': selectedIndex = 1; break;
+            case 'B': selectedIndex = 0; break;
+            default: return; // Should not happen
+        }
+        updatePivotButtonSelection(selectedIndex);
+        event.preventDefault(); // Prevent any default browser action for these keys
     }
 }
 
@@ -259,15 +385,10 @@ function onMouseMove(event) {
     if (intersects.length > 0) {
         const firstHit = intersects[0].object;
         if (currentlyHovered !== firstHit) {
-            if (firstHit.userData.ratio) {
-                currentlyHovered = firstHit;
-                playChord(firstHit.userData.ratio);
-            }
-            else if (currentlyHovered) {
-                 stopChord();
-                 currentlyHovered = null;
-            }
-        }
+                            if (firstHit.userData.ratio) {
+                                currentlyHovered = firstHit;
+                                playChord(firstHit.userData.ratio);
+                            }        }
     } else {
         if (currentlyHovered) {
             stopChord();
@@ -1093,6 +1214,19 @@ def generate_ji_triads(limit_value, equave=Fraction(2,1), limit_mode="odd", prim
     currentLayoutDisplay = default_layout_display; // Set global variable
 
     playButton = document.getElementById('playButton'); // Get reference to the new play button
+    pivotButtons = document.querySelectorAll('.pivot-button'); // Initialize global pivotButtons
+
+    // Set initial selection based on default currentPivotVoiceIndex (Bass, index 0)
+    updatePivotButtonSelection(currentPivotVoiceIndex);
+
+    pivotButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const selectedIndex = parseInt(button.dataset.pivotIndex);
+            updatePivotButtonSelection(selectedIndex);
+        });
+    });
+
+    // Add event listener for the play button
 
     await updateTetrahedron(
         default_limit_value, 
