@@ -499,7 +499,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
         let spritePointOpacity = 0.7;
 
         if (enable_color) {
-            let scaledComplexity = invertedComplexity * scaling_factor;
+            const colorScalingFactor = scaling_factor / 2;
+            let scaledComplexity = invertedComplexity * colorScalingFactor;
             scaledComplexity = Math.min(1, Math.max(0, scaledComplexity));
             
             const plasmaColor = plasmaColormap(scaledComplexity);
