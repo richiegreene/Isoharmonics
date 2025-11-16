@@ -180,95 +180,50 @@ const circleTexture = createCircleTexture();
 function makeTextSprite(message, parameters) {
 
     if ( parameters === undefined ) parameters = {};
-
     const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
-
     const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 40;
-
     const borderThickness = 0; // No border
-
     const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
 
-
-
     const canvas = document.createElement('canvas');
-
     const context = canvas.getContext('2d');
-
     context.font = fontsize + "px " + fontface; // Removed "Bold "
-
-    
 
     const metrics = context.measureText( message );
-
     const textWidth = metrics.width;
 
-
-
     canvas.width = textWidth + borderThickness * 2;
-
     canvas.height = fontsize * 1.4 + borderThickness * 2;
 
-
-
     context.font = fontsize + "px " + fontface; // Removed "Bold "
-
     context.textAlign = "center";
-
     context.textBaseline = "middle";
 
-
-
     context.fillStyle = "rgba(" + textColor.r + ", " + textColor.g + ", " + textColor.b + ", 1.0)";
-
     context.fillText( message, canvas.width / 2, canvas.height / 2);
 
-
-
     const texture = new THREE.Texture(canvas) 
-
     texture.needsUpdate = true;
 
-
-
     const spriteMaterial = new THREE.SpriteMaterial( { map: texture } );
-
     const sprite = new THREE.Sprite( spriteMaterial );
-
     sprite.scale.set(canvas.width / fontsize, canvas.height / fontsize, 1.0); // Adjust scale based on canvas size, more neutral
-
     return sprite;  
-
 }
 
-
-
 function roundRect(ctx, x, y, w, h, r) {
-
     ctx.beginPath();
-
     ctx.moveTo(x+r, y);
-
     ctx.lineTo(x+w-r, y);
-
     ctx.quadraticCurveTo(x+w, y, x+w, y+r);
-
     ctx.lineTo(x+w, y+h-r);
-
     ctx.quadraticCurveTo(x+w, y+h, x+w-r, y+h);
-
     ctx.lineTo(x+r, y+h);
-
     ctx.quadraticCurveTo(x, y+h, x, y+h-r);
-
     ctx.lineTo(x, y+r);
-
     ctx.quadraticCurveTo(x, y, x+r, y);
-
     ctx.closePath();
-
     ctx.fill();
-
     ctx.stroke();   
 
 }
@@ -280,21 +235,15 @@ function roundRect(ctx, x, y, w, h, r) {
 function makePointSprite(color, opacity) {
 
     const spriteMaterial = new THREE.SpriteMaterial({
-
         map: circleTexture,
-
         color: color,
-
         transparent: true,
-
         opacity: opacity,
-
         alphaTest: 0.1 // Use alphaTest for transparency
 
     });
 
     const sprite = new THREE.Sprite(spriteMaterial);
-
     return sprite;
 
 }
@@ -308,19 +257,12 @@ function updatePivotButtonSelection(selectedIndex) {
     pivotButtons.forEach(button => {
 
         if (parseInt(button.dataset.pivotIndex) === selectedIndex) {
-
             button.classList.add('selected');
-
         } else {
-
             button.classList.remove('selected');
-
         }
-
     });
-
     currentPivotVoiceIndex = selectedIndex; // Update the global variable
-
 }
 
 
