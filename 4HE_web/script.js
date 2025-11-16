@@ -8,19 +8,24 @@ let python_ready = false;
 let currentSprites = []; // To store sprites for dynamic scaling
 let currentLayoutDisplay = 'points'; // Global variable to store current display mode
 
-// More accurate Inferno Colormap function
-function infernoColormap(value) {
+// Plasma Colormap function
+function plasmaColormap(value) {
     // Clamp value between 0 and 1
     value = Math.min(1, Math.max(0, value));
 
     const colors = [
-        { r: 0/255, g: 0/255, b: 4/255 },    // #000004 (0%)
-        { r: 64/255, g: 10/255, b: 90/255 }, // #400a5a (~25%)
-        { r: 147/255, g: 59/255, b: 147/255 },// #933b93 (~50%)
-        { r: 224/255, g: 107/255, b: 58/255 },// #e06b3a (~75%)
-        { r: 255/255, g: 218/255, b: 14/255 } // #ffda0e (100%)
+        { r: 13/255, g: 8/255, b: 135/255 },   // #0d0887
+        { r: 75/255, g: 3/255, b: 161/255 },   // #4b03a1
+        { r: 133/255, g: 15/255, b: 186/255 },  // #850fba
+        { r: 185/255, g: 36/255, b: 177/255 },  // #b924b1
+        { r: 229/255, g: 74/255, b: 157/255 },  // #e54a9d
+        { r: 254/255, g: 113/255, b: 126/255 }, // #fe717e
+        { r: 255/255, g: 156/255, b: 84/255 },  // #ff9c54
+        { r: 255/255, g: 199/255, b: 40/255 },  // #ffc728
+        { r: 249/255, g: 248/255, b: 10/255 },  // #f9f80a
+        { r: 240/255, g: 249/255, b: 33/255 }   // #f0f921
     ];
-    const stops = [0, 0.25, 0.5, 0.75, 1];
+    const stops = [0, 1/9, 2/9, 3/9, 4/9, 5/9, 6/9, 7/9, 8/9, 1];
 
     // Find the segment index
     let i = 0;
@@ -71,7 +76,7 @@ const circleTexture = createCircleTexture();
 function makeTextSprite(message, parameters) {
     if ( parameters === undefined ) parameters = {};
     const fontface = parameters.hasOwnProperty("fontface") ? parameters["fontface"] : "Arial";
-    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 100; // Fixed high fontsize for resolution
+    const fontsize = parameters.hasOwnProperty("fontsize") ? parameters["fontsize"] : 40;
     const borderThickness = 0; // No border
     const textColor = parameters.hasOwnProperty("textColor") ? parameters["textColor"] : { r:255, g:255, b:255, a:1.0 };
 
@@ -139,7 +144,7 @@ function initThreeJS() {
     }
 
     scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x222222);
+    scene.background = new THREE.Color(0x000000);
 
     camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
     // Adjusted camera position for a "bird's eye view" with apex up
@@ -320,8 +325,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
 
     // Define conversion factors for GUI baseSize to internal base sizes
-    const label_conversion_factor = 0.0033; // GUI baseSize 1 -> internal 0.0033
-    const point_conversion_factor = 5;      // GUI baseSize 1 -> internal 5
+    const label_conversion_factor = 0.132; // GUI baseSize 1 -> internal 0.0033 * 400
+    const point_conversion_factor = 5;      // GUI baseSize 1 -> internal 5 * 10
 
     const internal_label_base_size = base_size * label_conversion_factor;
     const internal_point_base_size = base_size * point_conversion_factor;
@@ -351,10 +356,10 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
             let scaledComplexity = invertedComplexity * scaling_factor;
             scaledComplexity = Math.min(1, Math.max(0, scaledComplexity)); // Clamp between 0 and 1
             
-            const infernoColor = infernoColormap(scaledComplexity);
-            displayColor.setRGB(infernoColor.r, infernoColor.g, infernoColor.b);
-            spriteTextColor = { r: infernoColor.r * 255, g: infernoColor.g * 255, b: infernoColor.b * 255, a:1.0 };
-            spritePointColor.setRGB(infernoColor.r, infernoColor.g, infernoColor.b);
+            const plasmaColor = plasmaColormap(scaledComplexity);
+            displayColor.setRGB(plasmaColor.r, plasmaColor.g, plasmaColor.b);
+            spriteTextColor = { r: plasmaColor.r * 255, g: plasmaColor.g * 255, b: plasmaColor.b * 255, a:1.0 };
+            spritePointColor.setRGB(plasmaColor.r, plasmaColor.g, plasmaColor.b);
         } else {
             displayColor.setRGB(1, 1, 1); // White
             spritePointColor.setRGB(1, 1, 1); // White
