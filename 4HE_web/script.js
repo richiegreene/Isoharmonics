@@ -325,8 +325,8 @@ async function updateTetrahedron(limit_value, equave_ratio, complexity_method, h
 
 
     // Define conversion factors for GUI baseSize to internal base sizes
-    const label_conversion_factor = 0.132; // GUI baseSize 1 -> internal 0.0033 * 400
-    const point_conversion_factor = 5;      // GUI baseSize 1 -> internal 5 * 10
+    const label_conversion_factor = 0.066; // GUI baseSize 1 -> internal 0.0033 * 400
+    const point_conversion_factor = 2.5;      // GUI baseSize 1 -> internal 5 * 10
 
     const internal_label_base_size = base_size * label_conversion_factor;
     const internal_point_base_size = base_size * point_conversion_factor;
