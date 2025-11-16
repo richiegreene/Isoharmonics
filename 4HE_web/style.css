@@ -186,12 +186,12 @@ body, html {
     background-color: #6a6a6a;
 }
 
-.pivot-button.selected {
+#settings-menu .pivot-button.selected {
     background-color: #007bff; /* Blue for selected */
     border-color: #007bff;
 }
 
-.pivot-button.selected:hover {
+#settings-menu .pivot-button.selected:hover {
     background-color: #0056b3;
     border-color: #0056b3;
 }
