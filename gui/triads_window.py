@@ -1312,7 +1312,7 @@ class TriadsWindow(QMainWindow):
             self._3d_index_map = rev_map
 
             # Add EDO dots if enabled
-            if self.edo_button.isChecked():
+            if self.mode_button.isChecked():
                 self._add_edo_dots_to_3d_view()
 
         except Exception as e:
