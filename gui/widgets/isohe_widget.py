@@ -227,24 +227,35 @@ class IsoHEWidget(QWidget):
         path.addPolygon(self.triangle)
         painter.setClipPath(path)
 
-        for collection in contours.collections:
-            color = collection.get_edgecolor()[0]
-            qt_color = QColor.fromRgbF(color[0], color[1], color[2], color[3])
+        # Get the color map and normalization from the contours object
+        cmap = contours.cmap
+        norm = contours.norm
+
+        for level_idx, segments_at_level in enumerate(contours.allsegs):
+            # Get the color for this contour level using the colormap
+            level_value = contours.levels[level_idx]
+            normalized_level = norm(level_value)
+            color_rgba = cmap(normalized_level)
+            
+            qt_color = QColor.fromRgbF(color_rgba[0], color_rgba[1], color_rgba[2], color_rgba[3])
             pen = QPen(qt_color, 1.4)
             painter.setPen(pen)
 
-            for path_mpl in collection.get_paths():
+            for segment in segments_at_level:
                 q_path = QPainterPath()
-                for i, (vertex, code) in enumerate(path_mpl.iter_segments()):
-                    x_norm = (vertex[0] - x_min_data) / (x_max_data - x_min_data)
-                    y_norm = 1 - ((vertex[1] - y_min_data) / (y_max_data - y_min_data))
+                if len(segment) > 0:
+                    x_norm_start = (segment[0, 0] - x_min_data) / (x_max_data - x_min_data)
+                    y_norm_start = 1 - ((segment[0, 1] - y_min_data) / (y_max_data - y_min_data))
+                    x_widget_start = widget_triangle_rect.x() + x_norm_start * widget_triangle_rect.width()
+                    y_widget_start = widget_triangle_rect.y() + y_norm_start * widget_triangle_rect.height()
+                    q_path.moveTo(x_widget_start, y_widget_start)
 
-                    x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
-                    y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
-                    
-                    if i == 0:
-                        q_path.moveTo(x_widget, y_widget)
-                    else:
+                    for j in range(1, len(segment)):
+                        vertex = segment[j]
+                        x_norm = (vertex[0] - x_min_data) / (x_max_data - x_min_data)
+                        y_norm = 1 - ((vertex[1] - y_min_data) / (y_max_data - y_min_data))
+                        x_widget = widget_triangle_rect.x() + x_norm * widget_triangle_rect.width()
+                        y_widget = widget_triangle_rect.y() + y_norm * widget_triangle_rect.height()
                         q_path.lineTo(x_widget, y_widget)
                 painter.drawPath(q_path)
         
